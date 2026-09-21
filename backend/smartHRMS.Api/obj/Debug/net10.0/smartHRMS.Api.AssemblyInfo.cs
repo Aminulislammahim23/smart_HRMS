@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("smartHRMS.Api")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+45f1b89a369f39f83fc7404fb9a4530674ed8071")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+cccfd2fa38fe404db61a175f71cac1832ce5f698")]
 [assembly: System.Reflection.AssemblyProductAttribute("smartHRMS.Api")]
 [assembly: System.Reflection.AssemblyTitleAttribute("smartHRMS.Api")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

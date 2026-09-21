@@ -1,3 +1,6 @@
 <Solution>
   <Project Path="smartHRMS.Api/smartHRMS.Api.csproj" />
+  <Project Path="SmartHRMS.Application/smartHRMS.Application.csproj" Id="9855a885-d126-420d-91fb-7a198be5d016" />
+  <Project Path="SmartHRMS.Domain/smartHRMS.Domain.csproj" Id="7cddfb38-5fb0-4a59-8195-2ba3d7057907" />
+  <Project Path="SmartHRMS.Infrastructure/smartHRMS.Infrastructure.csproj" Id="4256ea86-5d1f-4063-b667-7099e16cf37d" />
 </Solution>
