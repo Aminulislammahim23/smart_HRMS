@@ -19,4 +19,9 @@
     </PackageReference>
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\smartHRMS.Application\smartHRMS.Application.csproj" />
+    <ProjectReference Include="..\smartHRMS.Infrastructure\smartHRMS.Infrastructure.csproj" />
+  </ItemGroup>
+
 </Project>

@@ -1,3 +1,11 @@
+C:\Users\aminu\AppData\Local\Temp\smartHRMS-second-audit-api-build\appsettings.Development.json
+C:\Users\aminu\AppData\Local\Temp\smartHRMS-second-audit-api-build\appsettings.json
+C:\Users\aminu\AppData\Local\Temp\smartHRMS-second-audit-api-build\smartHRMS.Api.staticwebassets.endpoints.json
+C:\Users\aminu\AppData\Local\Temp\smartHRMS-second-audit-api-build\smartHRMS.Api.exe
+C:\Users\aminu\AppData\Local\Temp\smartHRMS-second-audit-api-build\smartHRMS.Api.deps.json
+C:\Users\aminu\AppData\Local\Temp\smartHRMS-second-audit-api-build\smartHRMS.Api.runtimeconfig.json
+C:\Users\aminu\AppData\Local\Temp\smartHRMS-second-audit-api-build\smartHRMS.Api.dll
+C:\Users\aminu\AppData\Local\Temp\smartHRMS-second-audit-api-build\smartHRMS.Api.pdb
 D:\DEVELOP\new project\smart_HRMS\backend\smartHRMS.Api\bin\Debug\net10.0\appsettings.Development.json
 D:\DEVELOP\new project\smart_HRMS\backend\smartHRMS.Api\bin\Debug\net10.0\appsettings.json
 D:\DEVELOP\new project\smart_HRMS\backend\smartHRMS.Api\bin\Debug\net10.0\smartHRMS.Api.staticwebassets.endpoints.json
@@ -6,35 +14,10 @@ D:\DEVELOP\new project\smart_HRMS\backend\smartHRMS.Api\bin\Debug\net10.0\smartH
 D:\DEVELOP\new project\smart_HRMS\backend\smartHRMS.Api\bin\Debug\net10.0\smartHRMS.Api.runtimeconfig.json
 D:\DEVELOP\new project\smart_HRMS\backend\smartHRMS.Api\bin\Debug\net10.0\smartHRMS.Api.dll
 D:\DEVELOP\new project\smart_HRMS\backend\smartHRMS.Api\bin\Debug\net10.0\smartHRMS.Api.pdb
-D:\DEVELOP\new project\smart_HRMS\backend\smartHRMS.Api\bin\Debug\net10.0\Microsoft.AspNetCore.OpenApi.dll
-D:\DEVELOP\new project\smart_HRMS\backend\smartHRMS.Api\bin\Debug\net10.0\Microsoft.OpenApi.dll
-D:\DEVELOP\new project\smart_HRMS\backend\smartHRMS.Api\obj\Debug\net10.0\smartHRMS.Api.csproj.AssemblyReference.cache
-D:\DEVELOP\new project\smart_HRMS\backend\smartHRMS.Api\obj\Debug\net10.0\rpswa.dswa.cache.json
-D:\DEVELOP\new project\smart_HRMS\backend\smartHRMS.Api\obj\Debug\net10.0\smartHRMS.Api.GeneratedMSBuildEditorConfig.editorconfig
-D:\DEVELOP\new project\smart_HRMS\backend\smartHRMS.Api\obj\Debug\net10.0\smartHRMS.Api.AssemblyInfoInputs.cache
-D:\DEVELOP\new project\smart_HRMS\backend\smartHRMS.Api\obj\Debug\net10.0\smartHRMS.Api.AssemblyInfo.cs
-D:\DEVELOP\new project\smart_HRMS\backend\smartHRMS.Api\obj\Debug\net10.0\smartHRMS.Api.csproj.CoreCompileInputs.cache
-D:\DEVELOP\new project\smart_HRMS\backend\smartHRMS.Api\obj\Debug\net10.0\smartHRMS.Api.MvcApplicationPartsAssemblyInfo.cs
-D:\DEVELOP\new project\smart_HRMS\backend\smartHRMS.Api\obj\Debug\net10.0\smartHRMS.Api.MvcApplicationPartsAssemblyInfo.cache
-D:\DEVELOP\new project\smart_HRMS\backend\smartHRMS.Api\obj\Debug\net10.0\smartHRMS.Api.sourcelink.json
-D:\DEVELOP\new project\smart_HRMS\backend\smartHRMS.Api\obj\Debug\net10.0\rjimswa.dswa.cache.json
-D:\DEVELOP\new project\smart_HRMS\backend\smartHRMS.Api\obj\Debug\net10.0\rjsmrazor.dswa.cache.json
-D:\DEVELOP\new project\smart_HRMS\backend\smartHRMS.Api\obj\Debug\net10.0\rjsmcshtml.dswa.cache.json
-D:\DEVELOP\new project\smart_HRMS\backend\smartHRMS.Api\obj\Debug\net10.0\scopedcss\bundle\smartHRMS.Api.styles.css
-D:\DEVELOP\new project\smart_HRMS\backend\smartHRMS.Api\obj\Debug\net10.0\staticwebassets.build.json
-D:\DEVELOP\new project\smart_HRMS\backend\smartHRMS.Api\obj\Debug\net10.0\staticwebassets.build.json.cache
-D:\DEVELOP\new project\smart_HRMS\backend\smartHRMS.Api\obj\Debug\net10.0\staticwebassets.development.json
-D:\DEVELOP\new project\smart_HRMS\backend\smartHRMS.Api\obj\Debug\net10.0\staticwebassets.build.endpoints.json
-D:\DEVELOP\new project\smart_HRMS\backend\smartHRMS.Api\obj\Debug\net10.0\swae.build.ex.cache
-D:\DEVELOP\new project\smart_HRMS\backend\smartHRMS.Api\obj\Debug\net10.0\smartHRM.6FA07E43.Up2Date
-D:\DEVELOP\new project\smart_HRMS\backend\smartHRMS.Api\obj\Debug\net10.0\smartHRMS.Api.dll
-D:\DEVELOP\new project\smart_HRMS\backend\smartHRMS.Api\obj\Debug\net10.0\refint\smartHRMS.Api.dll
-D:\DEVELOP\new project\smart_HRMS\backend\smartHRMS.Api\obj\Debug\net10.0\smartHRMS.Api.pdb
-D:\DEVELOP\new project\smart_HRMS\backend\smartHRMS.Api\obj\Debug\net10.0\smartHRMS.Api.genruntimeconfig.cache
-D:\DEVELOP\new project\smart_HRMS\backend\smartHRMS.Api\obj\Debug\net10.0\ref\smartHRMS.Api.dll
 D:\DEVELOP\new project\smart_HRMS\backend\smartHRMS.Api\bin\Debug\net10.0\Azure.Core.dll
 D:\DEVELOP\new project\smart_HRMS\backend\smartHRMS.Api\bin\Debug\net10.0\Azure.Identity.dll
 D:\DEVELOP\new project\smart_HRMS\backend\smartHRMS.Api\bin\Debug\net10.0\Humanizer.dll
+D:\DEVELOP\new project\smart_HRMS\backend\smartHRMS.Api\bin\Debug\net10.0\Microsoft.AspNetCore.OpenApi.dll
 D:\DEVELOP\new project\smart_HRMS\backend\smartHRMS.Api\bin\Debug\net10.0\Microsoft.Bcl.AsyncInterfaces.dll
 D:\DEVELOP\new project\smart_HRMS\backend\smartHRMS.Api\bin\Debug\net10.0\Microsoft.Build.Framework.dll
 D:\DEVELOP\new project\smart_HRMS\backend\smartHRMS.Api\bin\Debug\net10.0\Microsoft.CodeAnalysis.dll
@@ -60,6 +43,7 @@ D:\DEVELOP\new project\smart_HRMS\backend\smartHRMS.Api\bin\Debug\net10.0\Micros
 D:\DEVELOP\new project\smart_HRMS\backend\smartHRMS.Api\bin\Debug\net10.0\Microsoft.IdentityModel.Protocols.dll
 D:\DEVELOP\new project\smart_HRMS\backend\smartHRMS.Api\bin\Debug\net10.0\Microsoft.IdentityModel.Protocols.OpenIdConnect.dll
 D:\DEVELOP\new project\smart_HRMS\backend\smartHRMS.Api\bin\Debug\net10.0\Microsoft.IdentityModel.Tokens.dll
+D:\DEVELOP\new project\smart_HRMS\backend\smartHRMS.Api\bin\Debug\net10.0\Microsoft.OpenApi.dll
 D:\DEVELOP\new project\smart_HRMS\backend\smartHRMS.Api\bin\Debug\net10.0\Microsoft.SqlServer.Server.dll
 D:\DEVELOP\new project\smart_HRMS\backend\smartHRMS.Api\bin\Debug\net10.0\Microsoft.VisualStudio.SolutionPersistence.dll
 D:\DEVELOP\new project\smart_HRMS\backend\smartHRMS.Api\bin\Debug\net10.0\Mono.TextTemplating.dll
@@ -164,3 +148,33 @@ D:\DEVELOP\new project\smart_HRMS\backend\smartHRMS.Api\bin\Debug\net10.0\runtim
 D:\DEVELOP\new project\smart_HRMS\backend\smartHRMS.Api\bin\Debug\net10.0\runtimes\win-arm64\native\msalruntime_arm64.dll
 D:\DEVELOP\new project\smart_HRMS\backend\smartHRMS.Api\bin\Debug\net10.0\runtimes\win-x64\native\msalruntime.dll
 D:\DEVELOP\new project\smart_HRMS\backend\smartHRMS.Api\bin\Debug\net10.0\runtimes\win-x86\native\msalruntime_x86.dll
+D:\DEVELOP\new project\smart_HRMS\backend\smartHRMS.Api\bin\Debug\net10.0\smartHRMS.Application.dll
+D:\DEVELOP\new project\smart_HRMS\backend\smartHRMS.Api\bin\Debug\net10.0\smartHRMS.Domain.dll
+D:\DEVELOP\new project\smart_HRMS\backend\smartHRMS.Api\bin\Debug\net10.0\smartHRMS.Infrastructure.dll
+D:\DEVELOP\new project\smart_HRMS\backend\smartHRMS.Api\bin\Debug\net10.0\smartHRMS.Application.pdb
+D:\DEVELOP\new project\smart_HRMS\backend\smartHRMS.Api\bin\Debug\net10.0\smartHRMS.Infrastructure.pdb
+D:\DEVELOP\new project\smart_HRMS\backend\smartHRMS.Api\bin\Debug\net10.0\smartHRMS.Domain.pdb
+D:\DEVELOP\new project\smart_HRMS\backend\smartHRMS.Api\obj\Debug\net10.0\smartHRMS.Api.csproj.AssemblyReference.cache
+D:\DEVELOP\new project\smart_HRMS\backend\smartHRMS.Api\obj\Debug\net10.0\rpswa.dswa.cache.json
+D:\DEVELOP\new project\smart_HRMS\backend\smartHRMS.Api\obj\Debug\net10.0\smartHRMS.Api.GeneratedMSBuildEditorConfig.editorconfig
+D:\DEVELOP\new project\smart_HRMS\backend\smartHRMS.Api\obj\Debug\net10.0\smartHRMS.Api.AssemblyInfoInputs.cache
+D:\DEVELOP\new project\smart_HRMS\backend\smartHRMS.Api\obj\Debug\net10.0\smartHRMS.Api.AssemblyInfo.cs
+D:\DEVELOP\new project\smart_HRMS\backend\smartHRMS.Api\obj\Debug\net10.0\smartHRMS.Api.csproj.CoreCompileInputs.cache
+D:\DEVELOP\new project\smart_HRMS\backend\smartHRMS.Api\obj\Debug\net10.0\smartHRMS.Api.MvcApplicationPartsAssemblyInfo.cs
+D:\DEVELOP\new project\smart_HRMS\backend\smartHRMS.Api\obj\Debug\net10.0\smartHRMS.Api.MvcApplicationPartsAssemblyInfo.cache
+D:\DEVELOP\new project\smart_HRMS\backend\smartHRMS.Api\obj\Debug\net10.0\smartHRMS.Api.sourcelink.json
+D:\DEVELOP\new project\smart_HRMS\backend\smartHRMS.Api\obj\Debug\net10.0\rjimswa.dswa.cache.json
+D:\DEVELOP\new project\smart_HRMS\backend\smartHRMS.Api\obj\Debug\net10.0\rjsmrazor.dswa.cache.json
+D:\DEVELOP\new project\smart_HRMS\backend\smartHRMS.Api\obj\Debug\net10.0\rjsmcshtml.dswa.cache.json
+D:\DEVELOP\new project\smart_HRMS\backend\smartHRMS.Api\obj\Debug\net10.0\scopedcss\bundle\smartHRMS.Api.styles.css
+D:\DEVELOP\new project\smart_HRMS\backend\smartHRMS.Api\obj\Debug\net10.0\staticwebassets.build.json
+D:\DEVELOP\new project\smart_HRMS\backend\smartHRMS.Api\obj\Debug\net10.0\staticwebassets.build.json.cache
+D:\DEVELOP\new project\smart_HRMS\backend\smartHRMS.Api\obj\Debug\net10.0\staticwebassets.development.json
+D:\DEVELOP\new project\smart_HRMS\backend\smartHRMS.Api\obj\Debug\net10.0\staticwebassets.build.endpoints.json
+D:\DEVELOP\new project\smart_HRMS\backend\smartHRMS.Api\obj\Debug\net10.0\swae.build.ex.cache
+D:\DEVELOP\new project\smart_HRMS\backend\smartHRMS.Api\obj\Debug\net10.0\smartHRM.6FA07E43.Up2Date
+D:\DEVELOP\new project\smart_HRMS\backend\smartHRMS.Api\obj\Debug\net10.0\smartHRMS.Api.dll
+D:\DEVELOP\new project\smart_HRMS\backend\smartHRMS.Api\obj\Debug\net10.0\refint\smartHRMS.Api.dll
+D:\DEVELOP\new project\smart_HRMS\backend\smartHRMS.Api\obj\Debug\net10.0\smartHRMS.Api.pdb
+D:\DEVELOP\new project\smart_HRMS\backend\smartHRMS.Api\obj\Debug\net10.0\smartHRMS.Api.genruntimeconfig.cache
+D:\DEVELOP\new project\smart_HRMS\backend\smartHRMS.Api\obj\Debug\net10.0\ref\smartHRMS.Api.dll

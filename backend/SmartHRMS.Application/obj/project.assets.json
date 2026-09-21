@@ -1,11 +1,30 @@
 {
   "version": 4,
   "targets": {
-    "net10.0": {}
+    "net10.0": {
+      "smartHRMS.Domain/1.0.0": {
+        "type": "project",
+        "framework": ".NETCoreApp,Version=v10.0",
+        "compile": {
+          "bin/placeholder/smartHRMS.Domain.dll": {}
+        },
+        "runtime": {
+          "bin/placeholder/smartHRMS.Domain.dll": {}
+        }
+      }
+    }
   },
-  "libraries": {},
+  "libraries": {
+    "smartHRMS.Domain/1.0.0": {
+      "type": "project",
+      "path": "../smartHRMS.Domain/smartHRMS.Domain.csproj",
+      "msbuildProject": "../smartHRMS.Domain/smartHRMS.Domain.csproj"
+    }
+  },
   "projectFileDependencyGroups": {
-    "net10.0": []
+    "net10.0": [
+      "smartHRMS.Domain >= 1.0.0"
+    ]
   },
   "packageFolders": {
     "C:\\Users\\aminu\\.nuget\\packages\\": {},
@@ -14,11 +33,11 @@
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "D:\\DEVELOP\\new project\\smart_HRMS\\backend\\SmartHRMS.Application\\SmartHRMS.Application.csproj",
-      "projectName": "SmartHRMS.Application",
-      "projectPath": "D:\\DEVELOP\\new project\\smart_HRMS\\backend\\SmartHRMS.Application\\SmartHRMS.Application.csproj",
+      "projectUniqueName": "D:\\DEVELOP\\new project\\smart_HRMS\\backend\\smartHRMS.Application\\smartHRMS.Application.csproj",
+      "projectName": "smartHRMS.Application",
+      "projectPath": "D:\\DEVELOP\\new project\\smart_HRMS\\backend\\smartHRMS.Application\\smartHRMS.Application.csproj",
       "packagesPath": "C:\\Users\\aminu\\.nuget\\packages\\",
-      "outputPath": "D:\\DEVELOP\\new project\\smart_HRMS\\backend\\SmartHRMS.Application\\obj\\",
+      "outputPath": "D:\\DEVELOP\\new project\\smart_HRMS\\backend\\smartHRMS.Application\\obj\\",
       "projectStyle": "PackageReference",
       "fallbackFolders": [
         "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
@@ -39,7 +58,11 @@
         "net10.0": {
           "framework": "net10.0",
           "targetAlias": "net10.0",
-          "projectReferences": {}
+          "projectReferences": {
+            "D:\\DEVELOP\\new project\\smart_HRMS\\backend\\smartHRMS.Domain\\smartHRMS.Domain.csproj": {
+              "projectPath": "D:\\DEVELOP\\new project\\smart_HRMS\\backend\\smartHRMS.Domain\\smartHRMS.Domain.csproj"
+            }
+          }
         }
       },
       "warningProperties": {

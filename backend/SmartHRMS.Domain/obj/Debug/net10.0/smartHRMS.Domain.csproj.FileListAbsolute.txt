@@ -1,0 +1,12 @@
+D:\DEVELOP\new project\smart_HRMS\backend\SmartHRMS.Domain\bin\Debug\net10.0\smartHRMS.Domain.deps.json
+D:\DEVELOP\new project\smart_HRMS\backend\SmartHRMS.Domain\bin\Debug\net10.0\smartHRMS.Domain.dll
+D:\DEVELOP\new project\smart_HRMS\backend\SmartHRMS.Domain\bin\Debug\net10.0\smartHRMS.Domain.pdb
+D:\DEVELOP\new project\smart_HRMS\backend\SmartHRMS.Domain\obj\Debug\net10.0\smartHRMS.Domain.GeneratedMSBuildEditorConfig.editorconfig
+D:\DEVELOP\new project\smart_HRMS\backend\SmartHRMS.Domain\obj\Debug\net10.0\smartHRMS.Domain.AssemblyInfoInputs.cache
+D:\DEVELOP\new project\smart_HRMS\backend\SmartHRMS.Domain\obj\Debug\net10.0\smartHRMS.Domain.AssemblyInfo.cs
+D:\DEVELOP\new project\smart_HRMS\backend\SmartHRMS.Domain\obj\Debug\net10.0\smartHRMS.Domain.csproj.CoreCompileInputs.cache
+D:\DEVELOP\new project\smart_HRMS\backend\SmartHRMS.Domain\obj\Debug\net10.0\smartHRMS.Domain.sourcelink.json
+D:\DEVELOP\new project\smart_HRMS\backend\SmartHRMS.Domain\obj\Debug\net10.0\smartHRMS.Domain.dll
+D:\DEVELOP\new project\smart_HRMS\backend\SmartHRMS.Domain\obj\Debug\net10.0\refint\smartHRMS.Domain.dll
+D:\DEVELOP\new project\smart_HRMS\backend\SmartHRMS.Domain\obj\Debug\net10.0\smartHRMS.Domain.pdb
+D:\DEVELOP\new project\smart_HRMS\backend\SmartHRMS.Domain\obj\Debug\net10.0\ref\smartHRMS.Domain.dll

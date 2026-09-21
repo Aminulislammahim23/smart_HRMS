@@ -1292,6 +1292,16 @@
         "build": {
           "buildTransitive/net8.0/_._": {}
         }
+      },
+      "smartHRMS.Domain/1.0.0": {
+        "type": "project",
+        "framework": ".NETCoreApp,Version=v10.0",
+        "compile": {
+          "bin/placeholder/smartHRMS.Domain.dll": {}
+        },
+        "runtime": {
+          "bin/placeholder/smartHRMS.Domain.dll": {}
+        }
       }
     }
   },
@@ -3713,13 +3723,19 @@
         "system.security.cryptography.protecteddata.nuspec",
         "useSharedDesignerContext.txt"
       ]
+    },
+    "smartHRMS.Domain/1.0.0": {
+      "type": "project",
+      "path": "../smartHRMS.Domain/smartHRMS.Domain.csproj",
+      "msbuildProject": "../smartHRMS.Domain/smartHRMS.Domain.csproj"
     }
   },
   "projectFileDependencyGroups": {
     "net10.0": [
       "Microsoft.EntityFrameworkCore >= 10.0.12",
       "Microsoft.EntityFrameworkCore.SqlServer >= 10.0.12",
-      "Microsoft.EntityFrameworkCore.Tools >= 10.0.12"
+      "Microsoft.EntityFrameworkCore.Tools >= 10.0.12",
+      "smartHRMS.Domain >= 1.0.0"
     ]
   },
   "packageFolders": {
@@ -3729,11 +3745,11 @@
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "D:\\DEVELOP\\new project\\smart_HRMS\\backend\\SmartHRMS.Infrastructure\\SmartHRMS.Infrastructure.csproj",
-      "projectName": "SmartHRMS.Infrastructure",
-      "projectPath": "D:\\DEVELOP\\new project\\smart_HRMS\\backend\\SmartHRMS.Infrastructure\\SmartHRMS.Infrastructure.csproj",
+      "projectUniqueName": "D:\\DEVELOP\\new project\\smart_HRMS\\backend\\smartHRMS.Infrastructure\\smartHRMS.Infrastructure.csproj",
+      "projectName": "smartHRMS.Infrastructure",
+      "projectPath": "D:\\DEVELOP\\new project\\smart_HRMS\\backend\\smartHRMS.Infrastructure\\smartHRMS.Infrastructure.csproj",
       "packagesPath": "C:\\Users\\aminu\\.nuget\\packages\\",
-      "outputPath": "D:\\DEVELOP\\new project\\smart_HRMS\\backend\\SmartHRMS.Infrastructure\\obj\\",
+      "outputPath": "D:\\DEVELOP\\new project\\smart_HRMS\\backend\\smartHRMS.Infrastructure\\obj\\",
       "projectStyle": "PackageReference",
       "fallbackFolders": [
         "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
@@ -3754,7 +3770,11 @@
         "net10.0": {
           "framework": "net10.0",
           "targetAlias": "net10.0",
-          "projectReferences": {}
+          "projectReferences": {
+            "D:\\DEVELOP\\new project\\smart_HRMS\\backend\\smartHRMS.Domain\\smartHRMS.Domain.csproj": {
+              "projectPath": "D:\\DEVELOP\\new project\\smart_HRMS\\backend\\smartHRMS.Domain\\smartHRMS.Domain.csproj"
+            }
+          }
         }
       },
       "warningProperties": {

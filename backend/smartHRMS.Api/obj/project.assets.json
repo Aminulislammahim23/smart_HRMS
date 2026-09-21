@@ -1110,6 +1110,44 @@
         "build": {
           "buildTransitive/net8.0/_._": {}
         }
+      },
+      "smartHRMS.Application/1.0.0": {
+        "type": "project",
+        "framework": ".NETCoreApp,Version=v10.0",
+        "dependencies": {
+          "smartHRMS.Domain": "1.0.0"
+        },
+        "compile": {
+          "bin/placeholder/smartHRMS.Application.dll": {}
+        },
+        "runtime": {
+          "bin/placeholder/smartHRMS.Application.dll": {}
+        }
+      },
+      "smartHRMS.Domain/1.0.0": {
+        "type": "project",
+        "framework": ".NETCoreApp,Version=v10.0",
+        "compile": {
+          "bin/placeholder/smartHRMS.Domain.dll": {}
+        },
+        "runtime": {
+          "bin/placeholder/smartHRMS.Domain.dll": {}
+        }
+      },
+      "smartHRMS.Infrastructure/1.0.0": {
+        "type": "project",
+        "framework": ".NETCoreApp,Version=v10.0",
+        "dependencies": {
+          "Microsoft.EntityFrameworkCore": "10.0.12",
+          "Microsoft.EntityFrameworkCore.SqlServer": "10.0.12",
+          "smartHRMS.Domain": "1.0.0"
+        },
+        "compile": {
+          "bin/placeholder/smartHRMS.Infrastructure.dll": {}
+        },
+        "runtime": {
+          "bin/placeholder/smartHRMS.Infrastructure.dll": {}
+        }
       }
     }
   },
@@ -3206,6 +3244,21 @@
         "system.security.cryptography.protecteddata.nuspec",
         "useSharedDesignerContext.txt"
       ]
+    },
+    "smartHRMS.Application/1.0.0": {
+      "type": "project",
+      "path": "../smartHRMS.Application/smartHRMS.Application.csproj",
+      "msbuildProject": "../smartHRMS.Application/smartHRMS.Application.csproj"
+    },
+    "smartHRMS.Domain/1.0.0": {
+      "type": "project",
+      "path": "../smartHRMS.Domain/smartHRMS.Domain.csproj",
+      "msbuildProject": "../smartHRMS.Domain/smartHRMS.Domain.csproj"
+    },
+    "smartHRMS.Infrastructure/1.0.0": {
+      "type": "project",
+      "path": "../smartHRMS.Infrastructure/smartHRMS.Infrastructure.csproj",
+      "msbuildProject": "../smartHRMS.Infrastructure/smartHRMS.Infrastructure.csproj"
     }
   },
   "projectFileDependencyGroups": {
@@ -3213,7 +3266,9 @@
       "Microsoft.AspNetCore.OpenApi >= 10.0.12",
       "Microsoft.EntityFrameworkCore.Design >= 10.0.12",
       "Microsoft.EntityFrameworkCore.SqlServer >= 10.0.12",
-      "Microsoft.EntityFrameworkCore.Tools >= 10.0.12"
+      "Microsoft.EntityFrameworkCore.Tools >= 10.0.12",
+      "smartHRMS.Application >= 1.0.0",
+      "smartHRMS.Infrastructure >= 1.0.0"
     ]
   },
   "packageFolders": {
@@ -3248,7 +3303,14 @@
         "net10.0": {
           "framework": "net10.0",
           "targetAlias": "net10.0",
-          "projectReferences": {}
+          "projectReferences": {
+            "D:\\DEVELOP\\new project\\smart_HRMS\\backend\\smartHRMS.Application\\smartHRMS.Application.csproj": {
+              "projectPath": "D:\\DEVELOP\\new project\\smart_HRMS\\backend\\smartHRMS.Application\\smartHRMS.Application.csproj"
+            },
+            "D:\\DEVELOP\\new project\\smart_HRMS\\backend\\smartHRMS.Infrastructure\\smartHRMS.Infrastructure.csproj": {
+              "projectPath": "D:\\DEVELOP\\new project\\smart_HRMS\\backend\\smartHRMS.Infrastructure\\smartHRMS.Infrastructure.csproj"
+            }
+          }
         }
       },
       "warningProperties": {
