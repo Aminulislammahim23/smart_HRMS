@@ -12,8 +12,8 @@ using smartHRMS.Infrastructure.Persistence;
 namespace smartHRMS.Infrastructure.Migrations
 {
     [DbContext(typeof(SmartHRMSDbContext))]
-    [Migration("20260921214734_InitialCreate")]
-    partial class InitialCreate
+    [Migration("20260922142212_AddEmployeePhotoUrl")]
+    partial class AddEmployeePhotoUrl
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -166,9 +166,6 @@ namespace smartHRMS.Infrastructure.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
 
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("bit");
-
                     b.Property<DateTime>("JoiningDate")
                         .HasColumnType("datetime2");
 
@@ -181,11 +178,15 @@ namespace smartHRMS.Infrastructure.Migrations
                         .HasMaxLength(30)
                         .HasColumnType("nvarchar(30)");
 
+                    b.Property<string>("PhotoUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .ValueGeneratedOnAdd()
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
                         .HasDefaultValue("Active");
 
                     b.Property<DateTime?>("UpdatedAt")

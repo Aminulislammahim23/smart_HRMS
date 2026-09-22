@@ -12,8 +12,8 @@ using smartHRMS.Infrastructure.Persistence;
 namespace smartHRMS.Infrastructure.Migrations
 {
     [DbContext(typeof(SmartHRMSDbContext))]
-    [Migration("20260921214734_InitialCreate")]
-    partial class InitialCreate
+    [Migration("20260921232127_UpdateEmployeeStatusToEnum")]
+    partial class UpdateEmployeeStatusToEnum
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -166,9 +166,6 @@ namespace smartHRMS.Infrastructure.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
 
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("bit");
-
                     b.Property<DateTime>("JoiningDate")
                         .HasColumnType("datetime2");
 
@@ -184,8 +181,8 @@ namespace smartHRMS.Infrastructure.Migrations
                     b.Property<string>("Status")
                         .IsRequired()
                         .ValueGeneratedOnAdd()
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
                         .HasDefaultValue("Active");
 
                     b.Property<DateTime?>("UpdatedAt")

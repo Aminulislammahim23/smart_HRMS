@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using smartHRMS.Application.Common.Models;
 
 namespace smartHRMS.Api.Controllers
 {
@@ -7,14 +8,16 @@ namespace smartHRMS.Api.Controllers
     public class HealthController : ControllerBase
     {
         [HttpGet]
-        public IActionResult GetHealthStatus()
+        public ActionResult<ApiResponse<object>> GetHealthStatus()
         {
-            return Ok(new
-             { 
-                status = "Healthy",
-                application = "smartHRMS",
-                version = "1.0.0",
-             });
+            return Ok(ApiResponse<object>.Ok(
+                new
+                {
+                    status = "Healthy",
+                    application = "smartHRMS",
+                    version = "1.0.0",
+                },
+                "Service is healthy."));
         }
     }
 }

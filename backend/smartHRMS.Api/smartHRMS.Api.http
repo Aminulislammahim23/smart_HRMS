@@ -1,6 +1,49 @@
 @smartHRMS.Api_HostAddress = http://localhost:5099
+@employeeId = 00000000-0000-0000-0000-000000000000
+@departmentId = 00000000-0000-0000-0000-000000000000
+@designationId = 00000000-0000-0000-0000-000000000000
 
-GET {{smartHRMS.Api_HostAddress}}/weatherforecast/
+### Health
+GET {{smartHRMS.Api_HostAddress}}/api/health
 Accept: application/json
 
-###
+### List employees
+GET {{smartHRMS.Api_HostAddress}}/api/employees
+Accept: application/json
+
+### Get employee by id
+GET {{smartHRMS.Api_HostAddress}}/api/employees/{{employeeId}}
+Accept: application/json
+
+### Create employee (replace the two ids with existing department/designation ids)
+POST {{smartHRMS.Api_HostAddress}}/api/employees
+Content-Type: application/json
+
+{
+  "employeeCode": "EMP-100",
+  "firstName": "Jane",
+  "lastName": "Doe",
+  "email": "jane.doe@example.com",
+  "phone": "+8801711000100",
+  "dateOfBirth": "1990-01-01",
+  "joiningDate": "2024-01-01",
+  "departmentId": "{{departmentId}}",
+  "designationId": "{{designationId}}"
+}
+
+### Deactivate employee
+DELETE {{smartHRMS.Api_HostAddress}}/api/employees/{{employeeId}}
+
+### Upload/replace employee photo (.jpg/.jpeg/.png/.webp, up to 5 MB)
+PUT {{smartHRMS.Api_HostAddress}}/api/employees/{{employeeId}}/photo
+Content-Type: multipart/form-data; boundary=----photoBoundary
+
+------photoBoundary
+Content-Disposition: form-data; name="photo"; filename="photo.jpg"
+Content-Type: image/jpeg
+
+< ./photo.jpg
+------photoBoundary--
+
+### Remove employee photo
+DELETE {{smartHRMS.Api_HostAddress}}/api/employees/{{employeeId}}/photo

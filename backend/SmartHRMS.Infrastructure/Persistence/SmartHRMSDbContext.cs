@@ -2,7 +2,7 @@
 using smartHRMS.Domain.Entities;
 using smartHRMS.Infrastructure.Persistence.Configurations;
 
-namespace smartHRMS.Infrastructure.Data;
+namespace smartHRMS.Infrastructure.Persistence;
 
 public class SmartHRMSDbContext : DbContext
 {

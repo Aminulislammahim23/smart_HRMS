@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using smartHRMS.Domain.Entities;
+using smartHRMS.Domain.Enums;
 
 namespace smartHRMS.Infrastructure.Persistence.Configurations;
 
@@ -45,8 +46,14 @@ public class EmployeeConfiguration : IEntityTypeConfiguration<Employee>
             .IsRequired();
 
         builder.Property(e => e.Status)
-            .HasMaxLength(50)
-            .HasDefaultValue("Active");
+            .IsRequired()
+            .HasConversion<string>()
+            .HasMaxLength(20)
+            .HasDefaultValue(EmployeeStatus.Active)
+            .HasSentinel(EmployeeStatus.Active);
+
+        builder.Property(e => e.PhotoUrl)
+            .HasMaxLength(500);
 
         builder.HasOne(e => e.Department)
             .WithMany(d => d.Employees)
