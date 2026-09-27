@@ -10,9 +10,17 @@ public class EmployeeDto
 
     public string LastName { get; set; } = string.Empty;
 
+    /// <summary>"FirstName LastName". Computed for display; not stored.</summary>
+    public string FullName { get; set; } = string.Empty;
+
     public string Email { get; set; } = string.Empty;
 
     public string? Phone { get; set; }
+
+    public string? Address { get; set; }
+
+    /// <summary>Male, Female, Other, or null when not provided.</summary>
+    public string? Gender { get; set; }
 
     public DateTime DateOfBirth { get; set; }
 
@@ -26,7 +34,14 @@ public class EmployeeDto
 
     public string? DesignationName { get; set; }
 
+    /// <summary>FullTime, PartTime, Contract or Intern.</summary>
+    public string EmploymentType { get; set; } = string.Empty;
+
+    /// <summary>Employment status: Active, Inactive, Resigned, Terminated or OnLeave.</summary>
     public string Status { get; set; } = string.Empty;
+
+    /// <summary>True while the employee still works here (Status is Active or OnLeave). Derived from Status, not stored.</summary>
+    public bool IsActive { get; set; }
 
     /// <summary>Relative URL of the employee's profile photo, or null if none has been uploaded.</summary>
     public string? PhotoUrl { get; set; }

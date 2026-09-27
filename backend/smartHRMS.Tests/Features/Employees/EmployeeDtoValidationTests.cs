@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using smartHRMS.Application.Features.Employees.Dtos;
+using smartHRMS.Domain.Enums;
 using Xunit;
 
 namespace smartHRMS.Tests.Features.Employees;
@@ -166,5 +167,36 @@ public class EmployeeDtoValidationTests
         dto.Phone = "not-a-phone!!";
 
         Assert.True(HasErrorFor(Validate(dto), nameof(CreateEmployeeDto.Phone)));
+    }
+
+    [Fact]
+    public void CreateDto_WithUndefinedEnumValues_Fails()
+    {
+        var dto = ValidCreateDto();
+        dto.Gender = (Gender)99;
+        dto.EmploymentType = (EmploymentType)99;
+
+        var results = Validate(dto);
+
+        Assert.True(HasErrorFor(results, nameof(CreateEmployeeDto.Gender)));
+        Assert.True(HasErrorFor(results, nameof(CreateEmployeeDto.EmploymentType)));
+    }
+
+    [Fact]
+    public void UpdateDto_WithUndefinedStatus_Fails()
+    {
+        var dto = ValidUpdateDto();
+        dto.Status = (EmployeeStatus)99;
+
+        Assert.True(HasErrorFor(Validate(dto), nameof(UpdateEmployeeDto.Status)));
+    }
+
+    [Fact]
+    public void CreateDto_WithTooLongAddress_Fails()
+    {
+        var dto = ValidCreateDto();
+        dto.Address = new string('x', 501);
+
+        Assert.True(HasErrorFor(Validate(dto), nameof(CreateEmployeeDto.Address)));
     }
 }

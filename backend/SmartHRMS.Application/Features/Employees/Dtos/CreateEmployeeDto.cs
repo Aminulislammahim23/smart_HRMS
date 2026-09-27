@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using smartHRMS.Application.Common.Validation;
+using smartHRMS.Domain.Enums;
 
 namespace smartHRMS.Application.Features.Employees.Dtos;
 
@@ -33,6 +34,12 @@ public class CreateEmployeeDto
         set => _phone = string.IsNullOrWhiteSpace(value) ? null : value.Trim();
     }
 
+    [MaxLength(500)]
+    public string? Address { get; set; }
+
+    [EnumDataType(typeof(Gender))]
+    public Gender? Gender { get; set; }
+
     [NotDefault]
     public DateTime DateOfBirth { get; set; }
 
@@ -44,4 +51,8 @@ public class CreateEmployeeDto
 
     [NotDefault]
     public Guid DesignationId { get; set; }
+
+    /// <summary>Optional; defaults to FullTime when omitted.</summary>
+    [EnumDataType(typeof(EmploymentType))]
+    public EmploymentType? EmploymentType { get; set; }
 }

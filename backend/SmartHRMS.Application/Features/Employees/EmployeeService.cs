@@ -45,7 +45,7 @@ public class EmployeeService : IEmployeeService
         var employeeCode = dto.EmployeeCode.Trim();
         var email = dto.Email.Trim();
 
-        await ValidateDepartmentAndDesignationAsync(dto.DepartmentId, dto.DesignationId, cancellationToken);
+        await ValidateDepartmentAndDesignationAsync(dto.DepartmentId, dto.DesignationId, null, cancellationToken);
 
         if (await _employeeRepository.EmployeeCodeExistsAsync(employeeCode, null, cancellationToken))
         {
@@ -64,10 +64,13 @@ public class EmployeeService : IEmployeeService
             LastName = dto.LastName.Trim(),
             Email = email,
             Phone = dto.Phone,
+            Address = NormalizeOptional(dto.Address),
+            Gender = dto.Gender,
             DateOfBirth = dto.DateOfBirth,
             JoiningDate = dto.JoiningDate,
             DepartmentId = dto.DepartmentId,
             DesignationId = dto.DesignationId,
+            EmploymentType = dto.EmploymentType ?? EmploymentType.FullTime,
             Status = EmployeeStatus.Active,
         };
 
@@ -87,7 +90,14 @@ public class EmployeeService : IEmployeeService
 
         var email = dto.Email.Trim();
 
-        await ValidateDepartmentAndDesignationAsync(dto.DepartmentId, dto.DesignationId, cancellationToken);
+        var newStatus = dto.Status ?? employee.Status;
+
+        // Bringing a former employee back (to Active/OnLeave) is a fresh assignment, so the department and designation
+        // must be active again. Otherwise only a changed department/designation is re-checked for being active.
+        var isReactivation = EmployeeStatusRules.CurrentStatuses.Contains(newStatus)
+            && !EmployeeStatusRules.CurrentStatuses.Contains(employee.Status);
+
+        await ValidateDepartmentAndDesignationAsync(dto.DepartmentId, dto.DesignationId, isReactivation ? null : employee, cancellationToken);
 
         if (await _employeeRepository.EmailExistsAsync(email, id, cancellationToken))
         {
@@ -98,10 +108,14 @@ public class EmployeeService : IEmployeeService
         employee.LastName = dto.LastName.Trim();
         employee.Email = email;
         employee.Phone = dto.Phone;
+        employee.Address = NormalizeOptional(dto.Address);
+        employee.Gender = dto.Gender;
         employee.DateOfBirth = dto.DateOfBirth;
         employee.JoiningDate = dto.JoiningDate;
         employee.DepartmentId = dto.DepartmentId;
         employee.DesignationId = dto.DesignationId;
+        employee.EmploymentType = dto.EmploymentType ?? employee.EmploymentType;
+        employee.Status = newStatus;
         employee.UpdatedAt = DateTime.UtcNow;
 
         await _employeeRepository.SaveChangesAsync(cancellationToken);
@@ -196,17 +210,32 @@ public class EmployeeService : IEmployeeService
         return MapToDto(employee);
     }
 
-    private async Task ValidateDepartmentAndDesignationAsync(Guid departmentId, Guid designationId, CancellationToken cancellationToken)
+    /// <summary>
+    /// Both references must exist. A new assignment must also be active; an employee who already belongs to a
+    /// since-deactivated department/designation (<paramref name="currentEmployee"/>) can still have other details edited.
+    /// </summary>
+    private async Task ValidateDepartmentAndDesignationAsync(Guid departmentId, Guid designationId, Employee? currentEmployee, CancellationToken cancellationToken)
     {
-        if (!await _departmentRepository.ExistsAsync(departmentId, cancellationToken))
+        var department = await _departmentRepository.GetByIdAsync(departmentId, cancellationToken)
+            ?? throw new BadRequestException($"Department with id '{departmentId}' does not exist.");
+
+        if (!department.IsActive && departmentId != currentEmployee?.DepartmentId)
         {
-            throw new BadRequestException($"Department with id '{departmentId}' does not exist.");
+            throw new BadRequestException($"Department '{department.Name}' is inactive and cannot be assigned to employees.");
         }
 
-        if (!await _designationRepository.ExistsAsync(designationId, cancellationToken))
+        var designation = await _designationRepository.GetByIdAsync(designationId, cancellationToken)
+            ?? throw new BadRequestException($"Designation with id '{designationId}' does not exist.");
+
+        if (!designation.IsActive && designationId != currentEmployee?.DesignationId)
         {
-            throw new BadRequestException($"Designation with id '{designationId}' does not exist.");
+            throw new BadRequestException($"Designation '{designation.Name}' is inactive and cannot be assigned to employees.");
         }
+    }
+
+    private static string? NormalizeOptional(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
     }
 
     private static EmployeeDto MapToDto(Employee employee)
@@ -217,15 +246,20 @@ public class EmployeeService : IEmployeeService
             EmployeeCode = employee.EmployeeCode,
             FirstName = employee.FirstName,
             LastName = employee.LastName,
+            FullName = $"{employee.FirstName} {employee.LastName}".Trim(),
             Email = employee.Email,
             Phone = employee.Phone,
+            Address = employee.Address,
+            Gender = employee.Gender?.ToString(),
             DateOfBirth = employee.DateOfBirth,
             JoiningDate = employee.JoiningDate,
             DepartmentId = employee.DepartmentId,
             DepartmentName = employee.Department?.Name,
             DesignationId = employee.DesignationId,
             DesignationName = employee.Designation?.Name,
+            EmploymentType = employee.EmploymentType.ToString(),
             Status = employee.Status.ToString(),
+            IsActive = EmployeeStatusRules.CurrentStatuses.Contains(employee.Status),
             PhotoUrl = employee.PhotoUrl,
             CreatedAt = employee.CreatedAt,
             UpdatedAt = employee.UpdatedAt,

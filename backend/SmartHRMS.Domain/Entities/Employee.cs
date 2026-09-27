@@ -15,6 +15,10 @@ public class Employee : BaseEntity
 
     public string? Phone { get; set; }
 
+    public string? Address { get; set; }
+
+    public Gender? Gender { get; set; }
+
     public DateTime DateOfBirth { get; set; }
 
     public DateTime JoiningDate { get; set; }
@@ -26,6 +30,8 @@ public class Employee : BaseEntity
     public Guid DesignationId { get; set; }
 
     public Designation? Designation { get; set; }
+
+    public EmploymentType EmploymentType { get; set; } = EmploymentType.FullTime;
 
     public EmployeeStatus Status { get; set; } = EmployeeStatus.Active;
 

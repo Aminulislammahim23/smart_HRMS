@@ -10,11 +10,16 @@ namespace smartHRMS.Tests.Features.Employees;
 
 public class EmployeeServiceTests
 {
+    private static readonly Guid DepartmentId = Guid.NewGuid();
+    private static readonly Guid DesignationId = Guid.NewGuid();
+
     private static (EmployeeService Service, FakeEmployeeRepository EmployeeRepository, FakeDepartmentRepository DepartmentRepository, FakeDesignationRepository DesignationRepository, FakeFileStorageService FileStorageService) CreateService()
     {
         var employeeRepository = new FakeEmployeeRepository();
         var departmentRepository = new FakeDepartmentRepository();
         var designationRepository = new FakeDesignationRepository();
+        departmentRepository.Departments.Add(new Department { Id = DepartmentId, Name = "Engineering" });
+        designationRepository.Designations.Add(new Designation { Id = DesignationId, Name = "Software Engineer" });
         var fileStorageService = new FakeFileStorageService();
         var service = new EmployeeService(employeeRepository, departmentRepository, designationRepository, fileStorageService);
 
@@ -29,8 +34,19 @@ public class EmployeeServiceTests
         Email = "jane.doe@example.com",
         DateOfBirth = new DateTime(1990, 1, 1),
         JoiningDate = new DateTime(2024, 1, 1),
-        DepartmentId = Guid.NewGuid(),
-        DesignationId = Guid.NewGuid(),
+        DepartmentId = DepartmentId,
+        DesignationId = DesignationId,
+    };
+
+    private static UpdateEmployeeDto ValidUpdateDto() => new()
+    {
+        FirstName = "Jane",
+        LastName = "Doe",
+        Email = "jane.doe@example.com",
+        DateOfBirth = new DateTime(1990, 1, 1),
+        JoiningDate = new DateTime(2024, 1, 1),
+        DepartmentId = DepartmentId,
+        DesignationId = DesignationId,
     };
 
     [Fact]
@@ -47,19 +63,21 @@ public class EmployeeServiceTests
     [Fact]
     public async Task CreateAsync_WhenDepartmentDoesNotExist_ThrowsBadRequestException()
     {
-        var (service, _, departmentRepository, _, _) = CreateService();
-        departmentRepository.ShouldExist = false;
+        var (service, _, _, _, _) = CreateService();
+        var dto = ValidCreateDto();
+        dto.DepartmentId = Guid.NewGuid();
 
-        await Assert.ThrowsAsync<BadRequestException>(() => service.CreateAsync(ValidCreateDto(), CancellationToken.None));
+        await Assert.ThrowsAsync<BadRequestException>(() => service.CreateAsync(dto, CancellationToken.None));
     }
 
     [Fact]
     public async Task CreateAsync_WhenDesignationDoesNotExist_ThrowsBadRequestException()
     {
-        var (service, _, _, designationRepository, _) = CreateService();
-        designationRepository.ShouldExist = false;
+        var (service, _, _, _, _) = CreateService();
+        var dto = ValidCreateDto();
+        dto.DesignationId = Guid.NewGuid();
 
-        await Assert.ThrowsAsync<BadRequestException>(() => service.CreateAsync(ValidCreateDto(), CancellationToken.None));
+        await Assert.ThrowsAsync<BadRequestException>(() => service.CreateAsync(dto, CancellationToken.None));
     }
 
     [Fact]
@@ -136,17 +154,146 @@ public class EmployeeServiceTests
         employeeRepository.Employees.Add(employee);
         employeeRepository.Employees.Add(new Employee { EmployeeCode = "EMP-002", Email = "taken@example.com" });
 
-        var dto = new UpdateEmployeeDto
-        {
-            FirstName = "Jane",
-            LastName = "Doe",
-            Email = " taken@example.com ",
-            DateOfBirth = new DateTime(1990, 1, 1),
-            JoiningDate = new DateTime(2024, 1, 1),
-            DepartmentId = Guid.NewGuid(),
-            DesignationId = Guid.NewGuid(),
-        };
+        var dto = ValidUpdateDto();
+        dto.Email = " taken@example.com ";
 
         await Assert.ThrowsAsync<ConflictException>(() => service.UpdateAsync(employee.Id, dto, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task CreateAsync_WhenDepartmentIsInactive_ThrowsBadRequestException()
+    {
+        var (service, _, departmentRepository, _, _) = CreateService();
+        departmentRepository.Departments.Single().IsActive = false;
+
+        await Assert.ThrowsAsync<BadRequestException>(() => service.CreateAsync(ValidCreateDto(), CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task CreateAsync_WhenDesignationIsInactive_ThrowsBadRequestException()
+    {
+        var (service, _, _, designationRepository, _) = CreateService();
+        designationRepository.Designations.Single().IsActive = false;
+
+        await Assert.ThrowsAsync<BadRequestException>(() => service.CreateAsync(ValidCreateDto(), CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task UpdateAsync_WhenMovingToInactiveDepartment_ThrowsBadRequestException()
+    {
+        var (service, employeeRepository, departmentRepository, _, _) = CreateService();
+        var employee = new Employee { EmployeeCode = "EMP-001", Email = "jane.doe@example.com", DepartmentId = DepartmentId, DesignationId = DesignationId };
+        employeeRepository.Employees.Add(employee);
+        var closedDepartment = new Department { Name = "Closed", IsActive = false };
+        departmentRepository.Departments.Add(closedDepartment);
+
+        var dto = ValidUpdateDto();
+        dto.DepartmentId = closedDepartment.Id;
+
+        await Assert.ThrowsAsync<BadRequestException>(() => service.UpdateAsync(employee.Id, dto, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task UpdateAsync_WhenStayingInDepartmentThatWasDeactivated_Succeeds()
+    {
+        var (service, employeeRepository, departmentRepository, _, _) = CreateService();
+        var employee = new Employee { EmployeeCode = "EMP-001", Email = "jane.doe@example.com", DepartmentId = DepartmentId, DesignationId = DesignationId };
+        employeeRepository.Employees.Add(employee);
+        departmentRepository.Departments.Single().IsActive = false;
+
+        var dto = ValidUpdateDto();
+        dto.FirstName = "Janet";
+
+        var result = await service.UpdateAsync(employee.Id, dto, CancellationToken.None);
+
+        Assert.Equal("Janet", result.FirstName);
+    }
+
+    [Fact]
+    public async Task CreateAsync_MapsProfileFieldsAndDefaultsEmploymentTypeToFullTime()
+    {
+        var (service, _, _, _, _) = CreateService();
+        var dto = ValidCreateDto();
+        dto.Address = "  House 1, Dhaka  ";
+        dto.Gender = Gender.Female;
+
+        var result = await service.CreateAsync(dto, CancellationToken.None);
+
+        Assert.Equal("Jane Doe", result.FullName);
+        Assert.Equal("House 1, Dhaka", result.Address);
+        Assert.Equal("Female", result.Gender);
+        Assert.Equal("FullTime", result.EmploymentType);
+        Assert.True(result.IsActive);
+    }
+
+    [Fact]
+    public async Task CreateAsync_WithBlankAddress_StoresNull()
+    {
+        var (service, employeeRepository, _, _, _) = CreateService();
+        var dto = ValidCreateDto();
+        dto.Address = "   ";
+
+        await service.CreateAsync(dto, CancellationToken.None);
+
+        Assert.Null(employeeRepository.Employees.Single().Address);
+    }
+
+    [Fact]
+    public async Task UpdateAsync_WithoutStatusOrEmploymentType_KeepsCurrentValues()
+    {
+        var (service, employeeRepository, _, _, _) = CreateService();
+        var employee = new Employee { EmployeeCode = "EMP-001", Email = "jane.doe@example.com", DepartmentId = DepartmentId, DesignationId = DesignationId, Status = EmployeeStatus.OnLeave, EmploymentType = EmploymentType.Contract };
+        employeeRepository.Employees.Add(employee);
+
+        var result = await service.UpdateAsync(employee.Id, ValidUpdateDto(), CancellationToken.None);
+
+        Assert.Equal("OnLeave", result.Status);
+        Assert.Equal("Contract", result.EmploymentType);
+        Assert.True(result.IsActive);
+    }
+
+    [Fact]
+    public async Task UpdateAsync_CanChangeStatusAndEmploymentType()
+    {
+        var (service, employeeRepository, _, _, _) = CreateService();
+        var employee = new Employee { EmployeeCode = "EMP-001", Email = "jane.doe@example.com", DepartmentId = DepartmentId, DesignationId = DesignationId };
+        employeeRepository.Employees.Add(employee);
+        var dto = ValidUpdateDto();
+        dto.Status = EmployeeStatus.Resigned;
+        dto.EmploymentType = EmploymentType.PartTime;
+
+        var result = await service.UpdateAsync(employee.Id, dto, CancellationToken.None);
+
+        Assert.Equal("Resigned", result.Status);
+        Assert.Equal("PartTime", result.EmploymentType);
+        Assert.False(result.IsActive);
+    }
+
+    [Fact]
+    public async Task UpdateAsync_ReactivatingIntoInactiveDepartment_ThrowsBadRequestException()
+    {
+        var (service, employeeRepository, departmentRepository, _, _) = CreateService();
+        var employee = new Employee { EmployeeCode = "EMP-001", Email = "jane.doe@example.com", DepartmentId = DepartmentId, DesignationId = DesignationId, Status = EmployeeStatus.Inactive };
+        employeeRepository.Employees.Add(employee);
+        departmentRepository.Departments.Single().IsActive = false;
+        var dto = ValidUpdateDto();
+        dto.Status = EmployeeStatus.Active;
+
+        await Assert.ThrowsAsync<BadRequestException>(() => service.UpdateAsync(employee.Id, dto, CancellationToken.None));
+        Assert.Equal(EmployeeStatus.Inactive, employee.Status);
+    }
+
+    [Fact]
+    public async Task UpdateAsync_ReactivatingInActiveDepartment_Succeeds()
+    {
+        var (service, employeeRepository, _, _, _) = CreateService();
+        var employee = new Employee { EmployeeCode = "EMP-001", Email = "jane.doe@example.com", DepartmentId = DepartmentId, DesignationId = DesignationId, Status = EmployeeStatus.Inactive };
+        employeeRepository.Employees.Add(employee);
+        var dto = ValidUpdateDto();
+        dto.Status = EmployeeStatus.Active;
+
+        var result = await service.UpdateAsync(employee.Id, dto, CancellationToken.None);
+
+        Assert.Equal("Active", result.Status);
     }
 }

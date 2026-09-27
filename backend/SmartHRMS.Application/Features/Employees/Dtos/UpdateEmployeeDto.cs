@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using smartHRMS.Application.Common.Validation;
+using smartHRMS.Domain.Enums;
 
 namespace smartHRMS.Application.Features.Employees.Dtos;
 
@@ -29,6 +30,13 @@ public class UpdateEmployeeDto
         set => _phone = string.IsNullOrWhiteSpace(value) ? null : value.Trim();
     }
 
+    /// <summary>Like Phone, this is a full update: omitting Address or Gender clears the stored value.</summary>
+    [MaxLength(500)]
+    public string? Address { get; set; }
+
+    [EnumDataType(typeof(Gender))]
+    public Gender? Gender { get; set; }
+
     [NotDefault]
     public DateTime DateOfBirth { get; set; }
 
@@ -40,4 +48,15 @@ public class UpdateEmployeeDto
 
     [NotDefault]
     public Guid DesignationId { get; set; }
+
+    /// <summary>Optional; omitting it keeps the current employment type (so older clients keep working).</summary>
+    [EnumDataType(typeof(EmploymentType))]
+    public EmploymentType? EmploymentType { get; set; }
+
+    /// <summary>
+    /// Optional; omitting it keeps the current status. Setting Active/OnLeave on a former employee reactivates them,
+    /// which requires their department and designation to be active.
+    /// </summary>
+    [EnumDataType(typeof(EmployeeStatus))]
+    public EmployeeStatus? Status { get; set; }
 }

@@ -1,5 +1,7 @@
-﻿using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.Data.SqlClient;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
+using smartHRMS.Application.Common.Exceptions;
 using smartHRMS.Domain.Common;
 using smartHRMS.Domain.Entities;
 using smartHRMS.Infrastructure.Persistence.Configurations;
@@ -20,6 +22,20 @@ public class SmartHRMSDbContext : DbContext
     public DbSet<Employee> Employees { get; set; }
 
     public DbSet<ApplicationUser> ApplicationUsers { get; set; }
+
+    public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            return await base.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException exception) when (exception.InnerException is SqlException { Number: 2601 or 2627 })
+        {
+            // Services check uniqueness before saving, but two simultaneous requests can both pass that check.
+            // The unique index then rejects the second one; report it as a 409 instead of an unhandled 500.
+            throw new ConflictException("A record with the same unique value already exists.");
+        }
+    }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

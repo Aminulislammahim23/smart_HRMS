@@ -36,6 +36,20 @@ public class EmployeeConfiguration : IEntityTypeConfiguration<Employee>
         builder.Property(e => e.Phone)
             .HasMaxLength(30);
 
+        builder.Property(e => e.Address)
+            .HasMaxLength(500);
+
+        builder.Property(e => e.Gender)
+            .HasConversion<string>()
+            .HasMaxLength(20);
+
+        builder.Property(e => e.EmploymentType)
+            .IsRequired()
+            .HasConversion<string>()
+            .HasMaxLength(20)
+            .HasDefaultValue(EmploymentType.FullTime)
+            .HasSentinel(EmploymentType.FullTime);
+
         builder.Property(e => e.JoiningDate)
             .IsRequired();
 
