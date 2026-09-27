@@ -41,24 +41,28 @@ public class EmployeeService : IEmployeeService
 
     public async Task<EmployeeDto> CreateAsync(CreateEmployeeDto dto, CancellationToken cancellationToken)
     {
+        // Trim before the uniqueness checks, otherwise " EMP-001" or " a@b.com" slips past them as a different value.
+        var employeeCode = dto.EmployeeCode.Trim();
+        var email = dto.Email.Trim();
+
         await ValidateDepartmentAndDesignationAsync(dto.DepartmentId, dto.DesignationId, cancellationToken);
 
-        if (await _employeeRepository.EmployeeCodeExistsAsync(dto.EmployeeCode, null, cancellationToken))
+        if (await _employeeRepository.EmployeeCodeExistsAsync(employeeCode, null, cancellationToken))
         {
-            throw new ConflictException($"Employee code '{dto.EmployeeCode}' is already in use.");
+            throw new ConflictException($"Employee code '{employeeCode}' is already in use.");
         }
 
-        if (await _employeeRepository.EmailExistsAsync(dto.Email, null, cancellationToken))
+        if (await _employeeRepository.EmailExistsAsync(email, null, cancellationToken))
         {
-            throw new ConflictException($"Email '{dto.Email}' is already in use.");
+            throw new ConflictException($"Email '{email}' is already in use.");
         }
 
         var employee = new Employee
         {
-            EmployeeCode = dto.EmployeeCode,
-            FirstName = dto.FirstName,
-            LastName = dto.LastName,
-            Email = dto.Email,
+            EmployeeCode = employeeCode,
+            FirstName = dto.FirstName.Trim(),
+            LastName = dto.LastName.Trim(),
+            Email = email,
             Phone = dto.Phone,
             DateOfBirth = dto.DateOfBirth,
             JoiningDate = dto.JoiningDate,
@@ -81,16 +85,18 @@ public class EmployeeService : IEmployeeService
         var employee = await _employeeRepository.GetByIdAsync(id, cancellationToken)
             ?? throw new NotFoundException($"Employee with id '{id}' was not found.");
 
+        var email = dto.Email.Trim();
+
         await ValidateDepartmentAndDesignationAsync(dto.DepartmentId, dto.DesignationId, cancellationToken);
 
-        if (await _employeeRepository.EmailExistsAsync(dto.Email, id, cancellationToken))
+        if (await _employeeRepository.EmailExistsAsync(email, id, cancellationToken))
         {
-            throw new ConflictException($"Email '{dto.Email}' is already in use.");
+            throw new ConflictException($"Email '{email}' is already in use.");
         }
 
-        employee.FirstName = dto.FirstName;
-        employee.LastName = dto.LastName;
-        employee.Email = dto.Email;
+        employee.FirstName = dto.FirstName.Trim();
+        employee.LastName = dto.LastName.Trim();
+        employee.Email = email;
         employee.Phone = dto.Phone;
         employee.DateOfBirth = dto.DateOfBirth;
         employee.JoiningDate = dto.JoiningDate;

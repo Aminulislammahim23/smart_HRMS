@@ -18,9 +18,16 @@ public class UpdateEmployeeDto
     [MaxLength(200)]
     public string Email { get; set; } = string.Empty;
 
+    private string? _phone;
+
+    /// <summary>Optional. A blank value (e.g. "" from an empty form field) is treated as "no phone" rather than an invalid number.</summary>
     [Phone]
     [MaxLength(30)]
-    public string? Phone { get; set; }
+    public string? Phone
+    {
+        get => _phone;
+        set => _phone = string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    }
 
     [NotDefault]
     public DateTime DateOfBirth { get; set; }

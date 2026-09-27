@@ -136,4 +136,35 @@ public class EmployeeDtoValidationTests
         Assert.True(HasErrorFor(results, nameof(UpdateEmployeeDto.DesignationId)));
         Assert.True(HasErrorFor(results, nameof(UpdateEmployeeDto.JoiningDate)));
     }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void CreateDto_WithBlankPhone_IsValidAndTreatedAsNoPhone(string blank)
+    {
+        var dto = ValidCreateDto();
+        dto.Phone = blank;
+
+        Assert.Null(dto.Phone);
+        Assert.Empty(Validate(dto));
+    }
+
+    [Fact]
+    public void UpdateDto_WithBlankPhone_IsValidAndTreatedAsNoPhone()
+    {
+        var dto = ValidUpdateDto();
+        dto.Phone = "";
+
+        Assert.Null(dto.Phone);
+        Assert.Empty(Validate(dto));
+    }
+
+    [Fact]
+    public void CreateDto_WithInvalidPhone_StillFails()
+    {
+        var dto = ValidCreateDto();
+        dto.Phone = "not-a-phone!!";
+
+        Assert.True(HasErrorFor(Validate(dto), nameof(CreateEmployeeDto.Phone)));
+    }
 }

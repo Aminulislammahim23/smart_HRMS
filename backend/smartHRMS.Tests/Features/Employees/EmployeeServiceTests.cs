@@ -99,4 +99,54 @@ public class EmployeeServiceTests
 
         Assert.Equal(EmployeeStatus.Inactive, employee.Status);
     }
+
+    [Fact]
+    public async Task CreateAsync_WithSurroundingWhitespace_StoresTrimmedValues()
+    {
+        var (service, employeeRepository, _, _, _) = CreateService();
+        var dto = ValidCreateDto();
+        dto.EmployeeCode = "  EMP-001 ";
+        dto.Email = " jane.doe@example.com ";
+        dto.FirstName = " Jane ";
+
+        await service.CreateAsync(dto, CancellationToken.None);
+
+        var stored = Assert.Single(employeeRepository.Employees);
+        Assert.Equal("EMP-001", stored.EmployeeCode);
+        Assert.Equal("jane.doe@example.com", stored.Email);
+        Assert.Equal("Jane", stored.FirstName);
+    }
+
+    [Fact]
+    public async Task CreateAsync_WhenPaddedEmployeeCodeMatchesExisting_ThrowsConflictException()
+    {
+        var (service, employeeRepository, _, _, _) = CreateService();
+        employeeRepository.Employees.Add(new Employee { EmployeeCode = "EMP-001", Email = "other@example.com" });
+        var dto = ValidCreateDto();
+        dto.EmployeeCode = " EMP-001";
+
+        await Assert.ThrowsAsync<ConflictException>(() => service.CreateAsync(dto, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task UpdateAsync_WhenPaddedEmailBelongsToAnotherEmployee_ThrowsConflictException()
+    {
+        var (service, employeeRepository, _, _, _) = CreateService();
+        var employee = new Employee { EmployeeCode = "EMP-001", Email = "jane.doe@example.com" };
+        employeeRepository.Employees.Add(employee);
+        employeeRepository.Employees.Add(new Employee { EmployeeCode = "EMP-002", Email = "taken@example.com" });
+
+        var dto = new UpdateEmployeeDto
+        {
+            FirstName = "Jane",
+            LastName = "Doe",
+            Email = " taken@example.com ",
+            DateOfBirth = new DateTime(1990, 1, 1),
+            JoiningDate = new DateTime(2024, 1, 1),
+            DepartmentId = Guid.NewGuid(),
+            DesignationId = Guid.NewGuid(),
+        };
+
+        await Assert.ThrowsAsync<ConflictException>(() => service.UpdateAsync(employee.Id, dto, CancellationToken.None));
+    }
 }
