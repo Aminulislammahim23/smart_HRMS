@@ -287,6 +287,21 @@ Swagger UI (`Swashbuckle.AspNetCore.SwaggerUI`) is served at `/swagger` in Devel
 
 Each layer registers its own services through a `DependencyInjection.cs` extension method (`AddApplication()`, `AddInfrastructure(connectionString, fileStorageRootPath)`), rather than wiring `DbContext`/repositories directly in the API project. `fileStorageRootPath` is resolved from `IWebHostEnvironment.WebRootPath` in `Program.cs` (falling back to `<ContentRoot>/wwwroot` if unset) and passed in — `Infrastructure` never reads it from configuration itself, keeping it swappable per environment.
 
+### CORS (frontend access)
+
+The React frontend (`frontend/smarthrms-web`) calls the API from another origin, so `Program.cs` registers a named CORS policy (`Frontend`) whose allowed origins come from configuration:
+
+```json
+// appsettings.Development.json
+"Cors": {
+  "AllowedOrigins": [ "http://localhost:5173", "http://localhost:4173" ]
+}
+```
+
+- Only listed origins get `Access-Control-Allow-Origin`; any header and method are allowed for them, and `Content-Disposition` is exposed for document downloads.
+- `appsettings.json` lists no origins, so outside Development cross-origin browser calls are refused until the deployed frontend's origin is added.
+- `app.UseCors(...)` is the first middleware, so error responses (400/404/409/500 from `AppExceptionHandler` and `StatusCodeResponseWriter`) also carry the CORS headers and the frontend can read their messages.
+
 ### Database configuration
 
 `appsettings.json`:
@@ -840,8 +855,9 @@ dotnet test smartHRMS.slnx
 2. **Authentication (highest priority now that the API holds identity documents and salaries):** JWT issuance tied to `ApplicationUser`, password hashing (e.g. `Microsoft.AspNetCore.Identity` password hasher).
 3. Role-based authorization: e.g. HR can manage all employees/documents/salaries; an employee can read only their own profile and documents.
 4. Employee list filtering/paging (by status, department, designation) as the data grows.
-5. CORS configuration once a frontend is introduced. Then the frontend profile page and sectioned create/edit form (Day 10 phases 11–12).
+5. ~~CORS configuration once a frontend is introduced.~~ Done: config-driven `Frontend` policy (see §CORS); the React frontend covers Day 1–11 including the profile pages. Add the production frontend origin to `Cors:AllowedOrigins` when deploying.
 6. Integration tests against a real/in-memory database for the API layer (current tests are unit-level against fake repositories).
+7. `AppExceptionHandler` logs requests cancelled by the client (`SqlException: Operation cancelled by user`) as unhandled errors and tries to write a 500. The frontend aborts in-flight requests when a page unmounts, so this is log noise only; checking `httpContext.RequestAborted.IsCancellationRequested` and returning quietly would silence it.
 
 ---
 
@@ -860,7 +876,6 @@ Recommended for future days:
 - JWT authentication + refresh tokens
 - Role-based authorization policies
 - Rate limiting
-- CORS policy scoped to the frontend origin once it exists
 - Antivirus/malware scanning of uploaded photos and documents before they are served, if this ever runs somewhere untrusted users can reach
 
 ---

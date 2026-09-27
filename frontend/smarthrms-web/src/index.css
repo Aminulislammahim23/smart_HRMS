@@ -1,0 +1,11 @@
+@import 'tailwindcss';
+
+@plugin 'daisyui' {
+  themes: corporate --default, business --prefersdark;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}

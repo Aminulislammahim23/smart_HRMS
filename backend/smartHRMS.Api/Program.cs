@@ -15,6 +15,16 @@ builder.Services.AddApiControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddOpenApi(options => options.AddOperationTransformer<FormFileOperationTransformer>());
 
+// CORS: only the browser origins listed in "Cors:AllowedOrigins" may call the API (Development lists the React
+// dev server). With no origins configured, cross-origin browser calls are refused.
+const string FrontendCorsPolicy = "Frontend";
+var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
+builder.Services.AddCors(options => options.AddPolicy(FrontendCorsPolicy, policy => policy
+    .WithOrigins(allowedOrigins)
+    .AllowAnyHeader()
+    .AllowAnyMethod()
+    .WithExposedHeaders("Content-Disposition")));
+
 //error handling
 builder.Services.AddExceptionHandler<AppExceptionHandler>();
 builder.Services.AddProblemDetails();
@@ -49,6 +59,8 @@ builder.Services.AddInfrastructure(connectionString, webRootPath, documentStorag
 var app = builder.Build();
 
 //http request pipeline
+// First, so CORS headers are also on error responses (4xx/5xx) and the browser lets the frontend read them.
+app.UseCors(FrontendCorsPolicy);
 app.UseExceptionHandler();
 app.UseStatusCodePages(StatusCodeResponseWriter.WriteAsync);
 app.UseStaticFiles();
