@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Microsoft.AspNetCore.OpenApi;
 using Microsoft.OpenApi;
 
@@ -27,9 +28,21 @@ public sealed class FormFileOperationTransformer : IOpenApiOperationTransformer
             return Task.CompletedTask;
         }
 
+        // Other [FromForm] values sent alongside the file (e.g. documentType, description) are plain text fields.
+        var formFieldNames = context.Description.ActionDescriptor.Parameters
+            .Where(parameter => parameter.BindingInfo?.BindingSource == BindingSource.Form
+                                && !typeof(IFormFile).IsAssignableFrom(parameter.ParameterType))
+            .Select(parameter => parameter.Name)
+            .ToList();
+
         var properties = fileParameterNames.ToDictionary(
             name => name,
             IOpenApiSchema (_) => new OpenApiSchema { Type = JsonSchemaType.String, Format = "binary" });
+
+        foreach (var name in formFieldNames)
+        {
+            properties[name] = new OpenApiSchema { Type = JsonSchemaType.String };
+        }
 
         operation.RequestBody = new OpenApiRequestBody
         {
@@ -50,7 +63,7 @@ public sealed class FormFileOperationTransformer : IOpenApiOperationTransformer
 
         if (operation.Parameters is not null)
         {
-            foreach (var name in fileParameterNames)
+            foreach (var name in fileParameterNames.Concat(formFieldNames))
             {
                 var stray = operation.Parameters.FirstOrDefault(p => p.Name == name);
                 if (stray is not null)

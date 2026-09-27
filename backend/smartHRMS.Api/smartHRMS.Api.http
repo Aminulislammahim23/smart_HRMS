@@ -2,6 +2,8 @@
 @employeeId = 00000000-0000-0000-0000-000000000000
 @departmentId = 00000000-0000-0000-0000-000000000000
 @designationId = 00000000-0000-0000-0000-000000000000
+@documentId = 00000000-0000-0000-0000-000000000000
+@recordId = 00000000-0000-0000-0000-000000000000
 
 ### Health
 GET {{smartHRMS.Api_HostAddress}}/api/health
@@ -25,9 +27,8 @@ Content-Type: application/json
   "lastName": "Doe",
   "email": "jane.doe@example.com",
   "phone": "+8801711000100",
-  "address": "House 10, Road 5, Dhaka",
-  "gender": "Female",
   "employmentType": "FullTime",
+  "basicSalary": 55000,
   "dateOfBirth": "1990-01-01",
   "joiningDate": "2024-01-01",
   "departmentId": "{{departmentId}}",
@@ -43,8 +44,6 @@ Content-Type: application/json
   "lastName": "Doe",
   "email": "jane.doe@example.com",
   "phone": "+8801711000100",
-  "address": "House 10, Road 5, Dhaka",
-  "gender": "Female",
   "dateOfBirth": "1990-01-01",
   "joiningDate": "2024-01-01",
   "departmentId": "{{departmentId}}",
@@ -121,3 +120,141 @@ Content-Type: application/json
 
 ### Deactivate designation (soft delete; 409 while active or on-leave employees are assigned)
 DELETE {{smartHRMS.Api_HostAddress}}/api/designations/{{designationId}}
+
+### Employee profile (personal + job information, photo, active documents)
+GET {{smartHRMS.Api_HostAddress}}/api/employees/{{employeeId}}/profile
+Accept: application/json
+
+### List employee documents (add ?includeInactive=true to include deactivated ones)
+GET {{smartHRMS.Api_HostAddress}}/api/employees/{{employeeId}}/documents
+Accept: application/json
+
+### Upload employee document (documentType: Nid, Passport, EducationalCertificate, Cv, JoiningLetter, ContractPaper, Other)
+POST {{smartHRMS.Api_HostAddress}}/api/employees/{{employeeId}}/documents
+Content-Type: multipart/form-data; boundary=----docBoundary
+
+------docBoundary
+Content-Disposition: form-data; name="documentType"
+
+Nid
+------docBoundary
+Content-Disposition: form-data; name="description"
+
+National ID card
+------docBoundary
+Content-Disposition: form-data; name="file"; filename="nid.pdf"
+Content-Type: application/pdf
+
+< ./nid.pdf
+------docBoundary--
+
+### Get one document's metadata
+GET {{smartHRMS.Api_HostAddress}}/api/employees/{{employeeId}}/documents/{{documentId}}
+Accept: application/json
+
+### Download a document
+GET {{smartHRMS.Api_HostAddress}}/api/employees/{{employeeId}}/documents/{{documentId}}/download
+
+### Update a document's type/description
+PUT {{smartHRMS.Api_HostAddress}}/api/employees/{{employeeId}}/documents/{{documentId}}
+Content-Type: application/json
+
+{
+  "documentType": "Passport",
+  "description": "Passport copy"
+}
+
+### Deactivate (soft delete) a document
+DELETE {{smartHRMS.Api_HostAddress}}/api/employees/{{employeeId}}/documents/{{documentId}}
+
+### ---------- Day 11: employee profile records ----------
+
+### Personal details (one per employee)
+GET {{smartHRMS.Api_HostAddress}}/api/employees/{{employeeId}}/personal-details
+
+### Create personal details (409 if they already exist; use PUT)
+POST {{smartHRMS.Api_HostAddress}}/api/employees/{{employeeId}}/personal-details
+Content-Type: application/json
+
+{
+  "gender": "Female",
+  "maritalStatus": "Married",
+  "bloodGroup": "OPositive",
+  "nationality": "Bangladeshi",
+  "nationalId": "1234567890123",
+  "passportNo": "AB1234567"
+}
+
+### Update personal details (full update)
+PUT {{smartHRMS.Api_HostAddress}}/api/employees/{{employeeId}}/personal-details
+Content-Type: application/json
+
+{
+  "gender": "Female",
+  "maritalStatus": "Married",
+  "bloodGroup": "OPositive",
+  "nationality": "Bangladeshi",
+  "nationalId": "1234567890123"
+}
+
+### Addresses
+GET {{smartHRMS.Api_HostAddress}}/api/employees/{{employeeId}}/addresses
+
+### Add an address (at most one Present and one Permanent)
+POST {{smartHRMS.Api_HostAddress}}/api/employees/{{employeeId}}/addresses
+Content-Type: application/json
+
+{
+  "addressType": "Present",
+  "address": "House 12, Road 2",
+  "city": "Dhaka",
+  "district": "Dhaka",
+  "postalCode": "1207"
+}
+
+### Emergency contacts
+GET {{smartHRMS.Api_HostAddress}}/api/employees/{{employeeId}}/emergency-contacts
+
+### Add an emergency contact
+POST {{smartHRMS.Api_HostAddress}}/api/employees/{{employeeId}}/emergency-contacts
+Content-Type: application/json
+
+{
+  "name": "John Doe",
+  "relationship": "Spouse",
+  "phone": "+8801800000100",
+  "email": "john.doe@example.com"
+}
+
+### Education
+GET {{smartHRMS.Api_HostAddress}}/api/employees/{{employeeId}}/educations
+
+### Add an education record
+POST {{smartHRMS.Api_HostAddress}}/api/employees/{{employeeId}}/educations
+Content-Type: application/json
+
+{
+  "degree": "BSc",
+  "institution": "University of Dhaka",
+  "major": "Computer Science",
+  "result": "CGPA 3.80",
+  "passingYear": 2017
+}
+
+### Experience
+GET {{smartHRMS.Api_HostAddress}}/api/employees/{{employeeId}}/experiences
+
+### Add an experience record (omit endDate for a current job)
+POST {{smartHRMS.Api_HostAddress}}/api/employees/{{employeeId}}/experiences
+Content-Type: application/json
+
+{
+  "companyName": "Acme Ltd",
+  "designation": "Software Engineer",
+  "startDate": "2018-01-01",
+  "endDate": "2022-12-31",
+  "responsibilities": "Backend development"
+}
+
+### Update / delete any profile record by id (replace "addresses" with the resource)
+DELETE {{smartHRMS.Api_HostAddress}}/api/employees/{{employeeId}}/addresses/{{recordId}}

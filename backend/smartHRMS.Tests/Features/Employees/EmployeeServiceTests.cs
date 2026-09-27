@@ -210,32 +210,15 @@ public class EmployeeServiceTests
     }
 
     [Fact]
-    public async Task CreateAsync_MapsProfileFieldsAndDefaultsEmploymentTypeToFullTime()
+    public async Task CreateAsync_ComputesFullNameAndDefaultsEmploymentTypeToFullTime()
     {
         var (service, _, _, _, _) = CreateService();
-        var dto = ValidCreateDto();
-        dto.Address = "  House 1, Dhaka  ";
-        dto.Gender = Gender.Female;
 
-        var result = await service.CreateAsync(dto, CancellationToken.None);
+        var result = await service.CreateAsync(ValidCreateDto(), CancellationToken.None);
 
         Assert.Equal("Jane Doe", result.FullName);
-        Assert.Equal("House 1, Dhaka", result.Address);
-        Assert.Equal("Female", result.Gender);
         Assert.Equal("FullTime", result.EmploymentType);
         Assert.True(result.IsActive);
-    }
-
-    [Fact]
-    public async Task CreateAsync_WithBlankAddress_StoresNull()
-    {
-        var (service, employeeRepository, _, _, _) = CreateService();
-        var dto = ValidCreateDto();
-        dto.Address = "   ";
-
-        await service.CreateAsync(dto, CancellationToken.None);
-
-        Assert.Null(employeeRepository.Employees.Single().Address);
     }
 
     [Fact]
@@ -295,5 +278,49 @@ public class EmployeeServiceTests
         var result = await service.UpdateAsync(employee.Id, dto, CancellationToken.None);
 
         Assert.Equal("Active", result.Status);
+    }
+
+    [Fact]
+    public async Task CreateAsync_StoresBasicSalary()
+    {
+        var (service, _, _, _, _) = CreateService();
+        var dto = ValidCreateDto();
+        dto.BasicSalary = 45000.50m;
+
+        var result = await service.CreateAsync(dto, CancellationToken.None);
+
+        Assert.Equal(45000.50m, result.BasicSalary);
+    }
+
+    [Fact]
+    public async Task CreateAsync_WithFutureDateOfBirth_ThrowsBadRequestException()
+    {
+        var (service, _, _, _, _) = CreateService();
+        var dto = ValidCreateDto();
+        dto.DateOfBirth = DateTime.UtcNow.Date.AddDays(1);
+
+        await Assert.ThrowsAsync<BadRequestException>(() => service.CreateAsync(dto, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task CreateAsync_WithJoiningDateBeforeDateOfBirth_ThrowsBadRequestException()
+    {
+        var (service, _, _, _, _) = CreateService();
+        var dto = ValidCreateDto();
+        dto.JoiningDate = dto.DateOfBirth.AddDays(-1);
+
+        await Assert.ThrowsAsync<BadRequestException>(() => service.CreateAsync(dto, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task UpdateAsync_WithoutBasicSalary_KeepsTheCurrentSalary()
+    {
+        var (service, employeeRepository, _, _, _) = CreateService();
+        var employee = new Employee { EmployeeCode = "EMP-001", Email = "jane.doe@example.com", DepartmentId = DepartmentId, DesignationId = DesignationId, BasicSalary = 60000m };
+        employeeRepository.Employees.Add(employee);
+
+        var result = await service.UpdateAsync(employee.Id, ValidUpdateDto(), CancellationToken.None);
+
+        Assert.Equal(60000m, result.BasicSalary);
     }
 }

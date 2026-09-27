@@ -30,13 +30,6 @@ public class UpdateEmployeeDto
         set => _phone = string.IsNullOrWhiteSpace(value) ? null : value.Trim();
     }
 
-    /// <summary>Like Phone, this is a full update: omitting Address or Gender clears the stored value.</summary>
-    [MaxLength(500)]
-    public string? Address { get; set; }
-
-    [EnumDataType(typeof(Gender))]
-    public Gender? Gender { get; set; }
-
     [NotDefault]
     public DateTime DateOfBirth { get; set; }
 
@@ -52,6 +45,10 @@ public class UpdateEmployeeDto
     /// <summary>Optional; omitting it keeps the current employment type (so older clients keep working).</summary>
     [EnumDataType(typeof(EmploymentType))]
     public EmploymentType? EmploymentType { get; set; }
+
+    /// <summary>Optional; omitting it keeps the current salary, so an older client can never wipe it by accident.</summary>
+    [Range(typeof(decimal), "0", "9999999999999999.99", ParseLimitsInInvariantCulture = true, ConvertValueInInvariantCulture = true, ErrorMessage = "The BasicSalary field must be between 0 and 9999999999999999.99.")]
+    public decimal? BasicSalary { get; set; }
 
     /// <summary>
     /// Optional; omitting it keeps the current status. Setting Active/OnLeave on a former employee reactivates them,

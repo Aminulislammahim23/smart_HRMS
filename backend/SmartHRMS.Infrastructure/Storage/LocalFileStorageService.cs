@@ -19,10 +19,8 @@ public class LocalFileStorageService : IFileStorageService
 
     public async Task<string> SaveAsync(Stream content, string fileName, string subFolder, CancellationToken cancellationToken)
     {
-        var folderPath = ResolveFolder(subFolder);
-        Directory.CreateDirectory(folderPath);
-
-        var physicalPath = Path.Combine(folderPath, fileName);
+        var physicalPath = SafeStoragePath.Combine(_rootPath, $"{subFolder}/{fileName}");
+        Directory.CreateDirectory(Path.GetDirectoryName(physicalPath)!);
 
         await using (var fileStream = new FileStream(physicalPath, FileMode.Create, FileAccess.Write, FileShare.None))
         {
@@ -40,29 +38,13 @@ public class LocalFileStorageService : IFileStorageService
             return Task.CompletedTask;
         }
 
-        var physicalPath = ResolvePhysicalPath(relativeUrl);
+        // Never trust the stored/incoming path as-is: it can only resolve to somewhere inside _rootPath.
+        var physicalPath = SafeStoragePath.Combine(_rootPath, relativeUrl);
         if (File.Exists(physicalPath))
         {
             File.Delete(physicalPath);
         }
 
         return Task.CompletedTask;
-    }
-
-    private string ResolveFolder(string subFolder)
-    {
-        var segments = subFolder.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        return Path.Combine(new[] { _rootPath }.Concat(segments).ToArray());
-    }
-
-    private string ResolvePhysicalPath(string relativeUrl)
-    {
-        // Never trust the stored/incoming path as-is: strip it down to bare segments so it can only
-        // resolve to somewhere inside _rootPath, even if a caller ever passed a crafted value.
-        var segments = relativeUrl
-            .Split('/', '\\')
-            .Where(segment => segment.Length > 0 && segment != "." && segment != "..");
-
-        return Path.Combine(new[] { _rootPath }.Concat(segments).ToArray());
     }
 }

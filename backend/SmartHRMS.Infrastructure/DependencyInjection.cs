@@ -9,7 +9,10 @@ namespace smartHRMS.Infrastructure;
 
 public static class DependencyInjection
 {
-    public static IServiceCollection AddInfrastructure(this IServiceCollection services, string connectionString, string fileStorageRootPath)
+    /// <param name="fileStorageRootPath">Public root for profile photos (served as static files).</param>
+    /// <param name="documentStorageRootPath">Private root for employee documents. Must not be under the public root.</param>
+    public static IServiceCollection AddInfrastructure(
+        this IServiceCollection services, string connectionString, string fileStorageRootPath, string documentStorageRootPath)
     {
         services.AddDbContext<SmartHRMSDbContext>(options =>
             options.UseSqlServer(connectionString));
@@ -17,8 +20,11 @@ public static class DependencyInjection
         services.AddScoped<IEmployeeRepository, EmployeeRepository>();
         services.AddScoped<IDepartmentRepository, DepartmentRepository>();
         services.AddScoped<IDesignationRepository, DesignationRepository>();
+        services.AddScoped<IEmployeeDocumentRepository, EmployeeDocumentRepository>();
+        services.AddScoped(typeof(IEmployeeOwnedRepository<>), typeof(EmployeeOwnedRepository<>));
 
         services.AddSingleton<IFileStorageService>(new LocalFileStorageService(fileStorageRootPath));
+        services.AddSingleton<IDocumentStorageService>(new LocalDocumentStorageService(documentStorageRootPath));
 
         return services;
     }

@@ -17,6 +17,17 @@ public class FakeEmployeeRepository : IEmployeeRepository
         return Task.FromResult(Employees.ToList());
     }
 
+    public Task<Employee?> GetProfileAsync(Guid id, CancellationToken cancellationToken)
+    {
+        // Tests attach the profile records to the employee's navigation collections directly.
+        return Task.FromResult(Employees.FirstOrDefault(e => e.Id == id));
+    }
+
+    public Task<bool> ExistsAsync(Guid id, CancellationToken cancellationToken)
+    {
+        return Task.FromResult(Employees.Any(e => e.Id == id));
+    }
+
     public Task<bool> EmployeeCodeExistsAsync(string employeeCode, Guid? excludeId, CancellationToken cancellationToken)
     {
         return Task.FromResult(Employees.Any(e => e.EmployeeCode == employeeCode && (excludeId == null || e.Id != excludeId)));

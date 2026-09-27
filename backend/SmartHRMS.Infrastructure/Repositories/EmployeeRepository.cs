@@ -31,6 +31,28 @@ public class EmployeeRepository : IEmployeeRepository
             .ToListAsync(cancellationToken);
     }
 
+    public async Task<Employee?> GetProfileAsync(Guid id, CancellationToken cancellationToken)
+    {
+        // Split queries: one per collection instead of one huge cartesian JOIN.
+        return await _dbContext.Employees
+            .AsNoTracking()
+            .AsSplitQuery()
+            .Include(e => e.Department)
+            .Include(e => e.Designation)
+            .Include(e => e.PersonalDetails)
+            .Include(e => e.Addresses)
+            .Include(e => e.EmergencyContacts)
+            .Include(e => e.Educations)
+            .Include(e => e.Experiences)
+            .Include(e => e.Documents.Where(d => d.IsActive))
+            .FirstOrDefaultAsync(e => e.Id == id, cancellationToken);
+    }
+
+    public async Task<bool> ExistsAsync(Guid id, CancellationToken cancellationToken)
+    {
+        return await _dbContext.Employees.AnyAsync(e => e.Id == id, cancellationToken);
+    }
+
     public async Task<bool> EmployeeCodeExistsAsync(string employeeCode, Guid? excludeId, CancellationToken cancellationToken)
     {
         return await _dbContext.Employees

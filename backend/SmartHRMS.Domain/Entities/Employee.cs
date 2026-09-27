@@ -15,10 +15,6 @@ public class Employee : BaseEntity
 
     public string? Phone { get; set; }
 
-    public string? Address { get; set; }
-
-    public Gender? Gender { get; set; }
-
     public DateTime DateOfBirth { get; set; }
 
     public DateTime JoiningDate { get; set; }
@@ -35,7 +31,23 @@ public class Employee : BaseEntity
 
     public EmployeeStatus Status { get; set; } = EmployeeStatus.Active;
 
+    /// <summary>Monthly basic salary. Optional; never negative.</summary>
+    public decimal? BasicSalary { get; set; }
+
     public string? PhotoUrl { get; set; }
 
     public ApplicationUser? ApplicationUser { get; set; }
+
+    public ICollection<EmployeeDocument> Documents { get; set; } = new List<EmployeeDocument>();
+
+    // Profile records (Day 11). Gender, blood group, addresses and emergency contacts live only in these.
+    public EmployeePersonalDetails? PersonalDetails { get; set; }
+
+    public ICollection<EmployeeAddress> Addresses { get; set; } = new List<EmployeeAddress>();
+
+    public ICollection<EmployeeEmergencyContact> EmergencyContacts { get; set; } = new List<EmployeeEmergencyContact>();
+
+    public ICollection<EmployeeEducation> Educations { get; set; } = new List<EmployeeEducation>();
+
+    public ICollection<EmployeeExperience> Experiences { get; set; } = new List<EmployeeExperience>();
 }

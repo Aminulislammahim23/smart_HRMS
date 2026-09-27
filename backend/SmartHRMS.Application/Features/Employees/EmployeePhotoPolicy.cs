@@ -1,3 +1,5 @@
+using smartHRMS.Application.Common.Files;
+
 namespace smartHRMS.Application.Features.Employees;
 
 /// <summary>
@@ -23,31 +25,19 @@ internal static class EmployeePhotoPolicy
     /// </summary>
     public static async Task<bool> MatchesImageSignatureAsync(Stream content, string extension, CancellationToken cancellationToken)
     {
-        if (!content.CanSeek)
+        var header = await FileSignature.ReadHeaderAsync(content, 12, cancellationToken);
+        if (header is null)
         {
             return true;
         }
 
-        var originalPosition = content.Position;
-        var header = new byte[12];
-        int bytesRead;
-        try
-        {
-            content.Position = 0;
-            bytesRead = await content.ReadAsync(header.AsMemory(0, header.Length), cancellationToken);
-        }
-        finally
-        {
-            content.Position = originalPosition;
-        }
-
         return extension.ToLowerInvariant() switch
         {
-            ".jpg" or ".jpeg" => bytesRead >= 3 && header[0] == 0xFF && header[1] == 0xD8 && header[2] == 0xFF,
-            ".png" => bytesRead >= 8 && header[0] == 0x89 && header[1] == 0x50 && header[2] == 0x4E && header[3] == 0x47
-                                      && header[4] == 0x0D && header[5] == 0x0A && header[6] == 0x1A && header[7] == 0x0A,
-            ".webp" => bytesRead >= 12 && header[0] == 0x52 && header[1] == 0x49 && header[2] == 0x46 && header[3] == 0x46
-                                        && header[8] == 0x57 && header[9] == 0x45 && header[10] == 0x42 && header[11] == 0x50,
+            ".jpg" or ".jpeg" => FileSignature.StartsWith(header, 0xFF, 0xD8, 0xFF),
+            ".png" => FileSignature.StartsWith(header, 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A),
+            // RIFF....WEBP: bytes 4-7 are the file size, so check the two tags separately.
+            ".webp" => FileSignature.StartsWith(header, 0x52, 0x49, 0x46, 0x46) && header.Length >= 12
+                       && header.AsSpan(8, 4).SequenceEqual(new byte[] { 0x57, 0x45, 0x42, 0x50 }),
             _ => false,
         };
     }

@@ -173,13 +173,9 @@ public class EmployeeDtoValidationTests
     public void CreateDto_WithUndefinedEnumValues_Fails()
     {
         var dto = ValidCreateDto();
-        dto.Gender = (Gender)99;
         dto.EmploymentType = (EmploymentType)99;
 
-        var results = Validate(dto);
-
-        Assert.True(HasErrorFor(results, nameof(CreateEmployeeDto.Gender)));
-        Assert.True(HasErrorFor(results, nameof(CreateEmployeeDto.EmploymentType)));
+        Assert.True(HasErrorFor(Validate(dto), nameof(CreateEmployeeDto.EmploymentType)));
     }
 
     [Fact]
@@ -192,11 +188,20 @@ public class EmployeeDtoValidationTests
     }
 
     [Fact]
-    public void CreateDto_WithTooLongAddress_Fails()
+    public void CreateDto_WithNegativeSalary_Fails()
     {
         var dto = ValidCreateDto();
-        dto.Address = new string('x', 501);
+        dto.BasicSalary = -1m;
 
-        Assert.True(HasErrorFor(Validate(dto), nameof(CreateEmployeeDto.Address)));
+        Assert.True(HasErrorFor(Validate(dto), nameof(CreateEmployeeDto.BasicSalary)));
+    }
+
+    [Fact]
+    public void CreateDto_WithZeroSalary_IsValid()
+    {
+        var dto = ValidCreateDto();
+        dto.BasicSalary = 0m;
+
+        Assert.Empty(Validate(dto));
     }
 }

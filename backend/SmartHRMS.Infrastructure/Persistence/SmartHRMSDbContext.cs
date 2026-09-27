@@ -23,6 +23,18 @@ public class SmartHRMSDbContext : DbContext
 
     public DbSet<ApplicationUser> ApplicationUsers { get; set; }
 
+    public DbSet<EmployeeDocument> EmployeeDocuments { get; set; }
+
+    public DbSet<EmployeePersonalDetails> EmployeePersonalDetails { get; set; }
+
+    public DbSet<EmployeeAddress> EmployeeAddresses { get; set; }
+
+    public DbSet<EmployeeEmergencyContact> EmployeeEmergencyContacts { get; set; }
+
+    public DbSet<EmployeeEducation> EmployeeEducations { get; set; }
+
+    public DbSet<EmployeeExperience> EmployeeExperiences { get; set; }
+
     public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
         try

@@ -16,8 +16,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\smartHRMS.Domain\smartHRMS.Domain.csproj" />
-    <ProjectReference Include="..\smartHRMS.Application\smartHRMS.Application.csproj" />
+    <ProjectReference Include="..\SmartHRMS.Domain\smartHRMS.Domain.csproj" />
+    <ProjectReference Include="..\SmartHRMS.Application\smartHRMS.Application.csproj" />
   </ItemGroup>
 
 </Project>

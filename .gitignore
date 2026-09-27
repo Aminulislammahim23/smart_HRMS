@@ -46,3 +46,6 @@ Thumbs.db
 # Uploaded employee photos (local dev storage) - keep the folder, not what's uploaded into it
 backend/smartHRMS.Api/wwwroot/uploads/**
 !backend/smartHRMS.Api/wwwroot/uploads/.gitkeep
+
+# Uploaded employee documents (private, local dev storage) - never commit
+backend/smartHRMS.Api/App_Data/

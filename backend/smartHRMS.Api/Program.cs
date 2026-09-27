@@ -2,6 +2,7 @@ using smartHRMS.Api.Extensions;
 using smartHRMS.Api.Middleware;
 using smartHRMS.Api.OpenApi;
 using smartHRMS.Application;
+using smartHRMS.Application.Features.EmployeeDocuments;
 using smartHRMS.Infrastructure;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -19,7 +20,9 @@ builder.Services.AddExceptionHandler<AppExceptionHandler>();
 builder.Services.AddProblemDetails();
 
 //application/infrastructure registration
-builder.Services.AddApplication();
+var documentsSection = builder.Configuration.GetSection(EmployeeDocumentOptions.SectionName);
+var documentOptions = documentsSection.Get<EmployeeDocumentOptions>() ?? new EmployeeDocumentOptions();
+builder.Services.AddApplication(documentOptions);
 
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
     ?? throw new InvalidOperationException("Connection string 'DefaultConnection' was not found.");
@@ -30,7 +33,18 @@ var webRootPath = string.IsNullOrWhiteSpace(builder.Environment.WebRootPath)
     ? Path.Combine(builder.Environment.ContentRootPath, "wwwroot")
     : builder.Environment.WebRootPath;
 
-builder.Services.AddInfrastructure(connectionString, webRootPath);
+// Employee documents (NID, passport, ...) are private: they live outside wwwroot and are only streamed through the API.
+var documentStoragePath = Path.GetFullPath(Path.Combine(
+    builder.Environment.ContentRootPath,
+    documentsSection["StoragePath"] ?? Path.Combine("App_Data", "employee-documents")));
+
+if (documentStoragePath.StartsWith(Path.GetFullPath(webRootPath), StringComparison.OrdinalIgnoreCase))
+{
+    throw new InvalidOperationException(
+        $"{EmployeeDocumentOptions.SectionName}:StoragePath must not be inside wwwroot, or documents would be publicly downloadable.");
+}
+
+builder.Services.AddInfrastructure(connectionString, webRootPath, documentStoragePath);
 
 var app = builder.Build();
 

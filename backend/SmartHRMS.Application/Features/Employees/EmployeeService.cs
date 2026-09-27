@@ -43,6 +43,8 @@ public class EmployeeService : IEmployeeService
     {
         // Trim before the uniqueness checks, otherwise " EMP-001" or " a@b.com" slips past them as a different value.
         var employeeCode = dto.EmployeeCode.Trim();
+        ValidateDates(dto.DateOfBirth, dto.JoiningDate);
+
         var email = dto.Email.Trim();
 
         await ValidateDepartmentAndDesignationAsync(dto.DepartmentId, dto.DesignationId, null, cancellationToken);
@@ -64,13 +66,12 @@ public class EmployeeService : IEmployeeService
             LastName = dto.LastName.Trim(),
             Email = email,
             Phone = dto.Phone,
-            Address = NormalizeOptional(dto.Address),
-            Gender = dto.Gender,
             DateOfBirth = dto.DateOfBirth,
             JoiningDate = dto.JoiningDate,
             DepartmentId = dto.DepartmentId,
             DesignationId = dto.DesignationId,
             EmploymentType = dto.EmploymentType ?? EmploymentType.FullTime,
+            BasicSalary = dto.BasicSalary,
             Status = EmployeeStatus.Active,
         };
 
@@ -87,6 +88,8 @@ public class EmployeeService : IEmployeeService
     {
         var employee = await _employeeRepository.GetByIdAsync(id, cancellationToken)
             ?? throw new NotFoundException($"Employee with id '{id}' was not found.");
+
+        ValidateDates(dto.DateOfBirth, dto.JoiningDate);
 
         var email = dto.Email.Trim();
 
@@ -108,13 +111,12 @@ public class EmployeeService : IEmployeeService
         employee.LastName = dto.LastName.Trim();
         employee.Email = email;
         employee.Phone = dto.Phone;
-        employee.Address = NormalizeOptional(dto.Address);
-        employee.Gender = dto.Gender;
         employee.DateOfBirth = dto.DateOfBirth;
         employee.JoiningDate = dto.JoiningDate;
         employee.DepartmentId = dto.DepartmentId;
         employee.DesignationId = dto.DesignationId;
         employee.EmploymentType = dto.EmploymentType ?? employee.EmploymentType;
+        employee.BasicSalary = dto.BasicSalary ?? employee.BasicSalary;
         employee.Status = newStatus;
         employee.UpdatedAt = DateTime.UtcNow;
 
@@ -169,7 +171,8 @@ public class EmployeeService : IEmployeeService
         }
 
         // Never trust the client-supplied file name: build a safe name from the employee id instead.
-        var safeFileName = $"{employee.Id:N}{extension.ToLowerInvariant()}";
+        // A fresh suffix per upload gives every photo version its own URL, so browsers never show a cached old photo.
+        var safeFileName = $"{employee.Id:N}_{Guid.NewGuid():N}{extension.ToLowerInvariant()}";
         var previousPhotoUrl = employee.PhotoUrl;
 
         // Save the new file before touching the database, so a failed upload never clears the existing photo.
@@ -233,9 +236,17 @@ public class EmployeeService : IEmployeeService
         }
     }
 
-    private static string? NormalizeOptional(string? value)
+    private static void ValidateDates(DateTime dateOfBirth, DateTime joiningDate)
     {
-        return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+        if (dateOfBirth.Date >= DateTime.UtcNow.Date)
+        {
+            throw new BadRequestException("The date of birth must be in the past.");
+        }
+
+        if (joiningDate.Date < dateOfBirth.Date)
+        {
+            throw new BadRequestException("The joining date cannot be earlier than the date of birth.");
+        }
     }
 
     private static EmployeeDto MapToDto(Employee employee)
@@ -249,8 +260,6 @@ public class EmployeeService : IEmployeeService
             FullName = $"{employee.FirstName} {employee.LastName}".Trim(),
             Email = employee.Email,
             Phone = employee.Phone,
-            Address = employee.Address,
-            Gender = employee.Gender?.ToString(),
             DateOfBirth = employee.DateOfBirth,
             JoiningDate = employee.JoiningDate,
             DepartmentId = employee.DepartmentId,
@@ -258,6 +267,7 @@ public class EmployeeService : IEmployeeService
             DesignationId = employee.DesignationId,
             DesignationName = employee.Designation?.Name,
             EmploymentType = employee.EmploymentType.ToString(),
+            BasicSalary = employee.BasicSalary,
             Status = employee.Status.ToString(),
             IsActive = EmployeeStatusRules.CurrentStatuses.Contains(employee.Status),
             PhotoUrl = employee.PhotoUrl,

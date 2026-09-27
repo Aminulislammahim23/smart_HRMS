@@ -34,12 +34,6 @@ public class CreateEmployeeDto
         set => _phone = string.IsNullOrWhiteSpace(value) ? null : value.Trim();
     }
 
-    [MaxLength(500)]
-    public string? Address { get; set; }
-
-    [EnumDataType(typeof(Gender))]
-    public Gender? Gender { get; set; }
-
     [NotDefault]
     public DateTime DateOfBirth { get; set; }
 
@@ -55,4 +49,8 @@ public class CreateEmployeeDto
     /// <summary>Optional; defaults to FullTime when omitted.</summary>
     [EnumDataType(typeof(EmploymentType))]
     public EmploymentType? EmploymentType { get; set; }
+
+    /// <summary>Monthly basic salary. Optional; cannot be negative.</summary>
+    [Range(typeof(decimal), "0", "9999999999999999.99", ParseLimitsInInvariantCulture = true, ConvertValueInInvariantCulture = true, ErrorMessage = "The BasicSalary field must be between 0 and 9999999999999999.99.")]
+    public decimal? BasicSalary { get; set; }
 }

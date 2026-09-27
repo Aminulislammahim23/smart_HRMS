@@ -14,10 +14,12 @@ namespace smartHRMS.Api.Controllers;
 public class EmployeesController : ControllerBase
 {
     private readonly IEmployeeService _employeeService;
+    private readonly IEmployeeProfileService _profileService;
 
-    public EmployeesController(IEmployeeService employeeService)
+    public EmployeesController(IEmployeeService employeeService, IEmployeeProfileService profileService)
     {
         _employeeService = employeeService;
+        _profileService = profileService;
     }
 
     [HttpGet]
@@ -35,6 +37,16 @@ public class EmployeesController : ControllerBase
     {
         var employee = await _employeeService.GetByIdAsync(id, cancellationToken);
         return Ok(ApiResponse<EmployeeDto>.Ok(employee, "Employee retrieved successfully."));
+    }
+
+    /// <summary>Full employee profile: personal and job information, department, designation, photo and active documents.</summary>
+    [HttpGet("{id:guid}/profile")]
+    [ProducesResponseType(typeof(ApiResponse<EmployeeProfileDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<ApiResponse<EmployeeProfileDto>>> GetProfile(Guid id, CancellationToken cancellationToken)
+    {
+        var profile = await _profileService.GetProfileAsync(id, cancellationToken);
+        return Ok(ApiResponse<EmployeeProfileDto>.Ok(profile, "Employee profile retrieved successfully."));
     }
 
     [HttpPost]

@@ -17,11 +17,6 @@ public class EmployeeDto
 
     public string? Phone { get; set; }
 
-    public string? Address { get; set; }
-
-    /// <summary>Male, Female, Other, or null when not provided.</summary>
-    public string? Gender { get; set; }
-
     public DateTime DateOfBirth { get; set; }
 
     public DateTime JoiningDate { get; set; }
@@ -36,6 +31,8 @@ public class EmployeeDto
 
     /// <summary>FullTime, PartTime, Contract or Intern.</summary>
     public string EmploymentType { get; set; } = string.Empty;
+
+    public decimal? BasicSalary { get; set; }
 
     /// <summary>Employment status: Active, Inactive, Resigned, Terminated or OnLeave.</summary>
     public string Status { get; set; } = string.Empty;
