@@ -11,6 +11,16 @@ public class UploadEmployeeDocumentDto
     /// <summary>Original client file name: its extension is validated and a sanitized copy is kept as the download name.</summary>
     public required string FileName { get; set; }
 
+    /// <summary>Client-declared Content-Type. Cross-checked with the extension; the file signature is the real check.</summary>
+    public string? ContentType { get; set; }
+
+    /// <summary>Required title for the document, e.g. "National ID card".</summary>
+    public string? DocumentName { get; set; }
+
+    public DateTime? IssueDate { get; set; }
+
+    public DateTime? ExpiryDate { get; set; }
+
     public long Length { get; set; }
 
     /// <summary>Raw form value, parsed by the service so the error can list the accepted types.</summary>

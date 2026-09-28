@@ -35,15 +35,27 @@ public class EmployeeDocumentServiceTests
         return new Setup(new EmployeeDocumentService(documents, employees, storage, options), documents, storage, employee);
     }
 
-    private static UploadEmployeeDocumentDto Upload(string fileName = "nid.pdf", byte[]? bytes = null, string? documentType = "Nid", string? description = null)
+    private static UploadEmployeeDocumentDto Upload(
+        string fileName = "nid.pdf",
+        byte[]? bytes = null,
+        string? documentType = "Nid",
+        string? description = null,
+        string? documentName = "National ID card",
+        string? contentType = null,
+        DateTime? issueDate = null,
+        DateTime? expiryDate = null)
     {
         bytes ??= PdfBytes;
         return new UploadEmployeeDocumentDto
         {
             Content = new MemoryStream(bytes),
             FileName = fileName,
+            ContentType = contentType,
             Length = bytes.Length,
             DocumentType = documentType,
+            DocumentName = documentName,
+            IssueDate = issueDate,
+            ExpiryDate = expiryDate,
             Description = description,
         };
     }
@@ -238,6 +250,151 @@ public class EmployeeDocumentServiceTests
 
         Assert.Equal("Cv", result.DocumentType);
         Assert.Null(result.Description);
+    }
+
+    [Fact]
+    public async Task UploadAsync_StoresNameAndDatesAsCalendarDates()
+    {
+        var s = CreateService();
+
+        var result = await s.Service.UploadAsync(
+            s.Employee.Id,
+            Upload(documentName: "  Passport  ", documentType: "Passport", issueDate: new DateTime(2020, 5, 1, 13, 45, 0), expiryDate: new DateTime(2030, 4, 30)),
+            CancellationToken.None);
+
+        Assert.Equal("Passport", result.DocumentName);
+        Assert.Equal(new DateTime(2020, 5, 1), result.IssueDate);
+        Assert.Equal(new DateTime(2030, 4, 30), result.ExpiryDate);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task UploadAsync_WithoutDocumentName_ThrowsBadRequest(string? documentName)
+    {
+        var s = CreateService();
+
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            s.Service.UploadAsync(s.Employee.Id, Upload(documentName: documentName), CancellationToken.None));
+        Assert.Empty(s.Storage.Files);
+    }
+
+    [Fact]
+    public async Task UploadAsync_WithTooLongDocumentName_ThrowsBadRequest()
+    {
+        var s = CreateService();
+
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            s.Service.UploadAsync(s.Employee.Id, Upload(documentName: new string('x', 201)), CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task UploadAsync_WhenExpiryIsBeforeIssue_ThrowsBadRequest()
+    {
+        var s = CreateService();
+
+        await Assert.ThrowsAsync<BadRequestException>(() => s.Service.UploadAsync(
+            s.Employee.Id, Upload(issueDate: new DateTime(2024, 1, 10), expiryDate: new DateTime(2024, 1, 9)), CancellationToken.None));
+        Assert.Empty(s.Storage.Files);
+    }
+
+    [Theory]
+    [InlineData("application/pdf")]
+    [InlineData("application/octet-stream")]
+    [InlineData("application/pdf; charset=binary")]
+    [InlineData(null)]
+    public async Task UploadAsync_AcceptsMatchingOrGenericContentType(string? contentType)
+    {
+        var s = CreateService();
+
+        await s.Service.UploadAsync(s.Employee.Id, Upload(contentType: contentType), CancellationToken.None);
+
+        Assert.Single(s.Documents.Documents);
+    }
+
+    [Theory]
+    [InlineData("text/html")]
+    [InlineData("image/png")]
+    [InlineData("application/x-msdownload")]
+    public async Task UploadAsync_WithMismatchedContentType_ThrowsBadRequest(string contentType)
+    {
+        var s = CreateService();
+
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            s.Service.UploadAsync(s.Employee.Id, Upload(contentType: contentType), CancellationToken.None));
+        Assert.Empty(s.Storage.Files);
+    }
+
+    [Theory]
+    [InlineData("BirthCertificate", EmployeeDocumentType.BirthCertificate)]
+    [InlineData("TinCertificate", EmployeeDocumentType.TinCertificate)]
+    public async Task UploadAsync_AcceptsDay12DocumentTypes(string documentType, EmployeeDocumentType expected)
+    {
+        var s = CreateService();
+
+        await s.Service.UploadAsync(s.Employee.Id, Upload(documentType: documentType), CancellationToken.None);
+
+        Assert.Equal(expected, s.Documents.Documents.Single().DocumentType);
+    }
+
+    [Fact]
+    public async Task UpdateAsync_ChangesNameAndDates_AndKeepsTheFile()
+    {
+        var s = CreateService();
+        var document = await s.Service.UploadAsync(s.Employee.Id, Upload(), CancellationToken.None);
+        var filePath = s.Documents.Documents.Single().FilePath;
+
+        var result = await s.Service.UpdateAsync(
+            s.Employee.Id,
+            document.Id,
+            new UpdateEmployeeDocumentDto { DocumentName = " Smart NID ", IssueDate = new DateTime(2021, 1, 1), ExpiryDate = new DateTime(2031, 1, 1) },
+            CancellationToken.None);
+
+        Assert.Equal("Smart NID", result.DocumentName);
+        Assert.Equal(new DateTime(2021, 1, 1), result.IssueDate);
+        Assert.Equal(new DateTime(2031, 1, 1), result.ExpiryDate);
+        Assert.Equal(filePath, s.Documents.Documents.Single().FilePath);
+        Assert.Single(s.Storage.Files);
+    }
+
+    [Fact]
+    public async Task UpdateAsync_WithoutDocumentName_KeepsIt_ButBlankNameIsRejected()
+    {
+        var s = CreateService();
+        var document = await s.Service.UploadAsync(s.Employee.Id, Upload(documentName: "Original"), CancellationToken.None);
+
+        var kept = await s.Service.UpdateAsync(s.Employee.Id, document.Id, new UpdateEmployeeDocumentDto(), CancellationToken.None);
+        Assert.Equal("Original", kept.DocumentName);
+
+        await Assert.ThrowsAsync<BadRequestException>(() => s.Service.UpdateAsync(
+            s.Employee.Id, document.Id, new UpdateEmployeeDocumentDto { DocumentName = "  " }, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task UpdateAsync_WhenExpiryIsBeforeIssue_ThrowsBadRequest_AndChangesNothing()
+    {
+        var s = CreateService();
+        var document = await s.Service.UploadAsync(s.Employee.Id, Upload(documentName: "Original"), CancellationToken.None);
+
+        await Assert.ThrowsAsync<BadRequestException>(() => s.Service.UpdateAsync(
+            s.Employee.Id,
+            document.Id,
+            new UpdateEmployeeDocumentDto { DocumentName = "Changed", IssueDate = new DateTime(2025, 6, 2), ExpiryDate = new DateTime(2025, 6, 1) },
+            CancellationToken.None));
+
+        Assert.Equal("Original", s.Documents.Documents.Single().DocumentName);
+    }
+
+    [Fact]
+    public async Task UpdateAsync_ThroughAnotherEmployee_ThrowsNotFound()
+    {
+        var s = CreateService();
+        var document = await s.Service.UploadAsync(s.Employee.Id, Upload(), CancellationToken.None);
+
+        await Assert.ThrowsAsync<NotFoundException>(() => s.Service.UpdateAsync(
+            Guid.NewGuid(), document.Id, new UpdateEmployeeDocumentDto { DocumentName = "x" }, CancellationToken.None));
+        await Assert.ThrowsAsync<NotFoundException>(() => s.Service.DeactivateAsync(Guid.NewGuid(), document.Id, CancellationToken.None));
     }
 
     [Fact]

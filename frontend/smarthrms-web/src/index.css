@@ -1,11 +1,83 @@
 @import 'tailwindcss';
 
+/* One dark theme matched to the navy/violet background artwork (light text stays readable on it). */
 @plugin 'daisyui' {
-  themes: corporate --default, business --prefersdark;
+  themes: false;
+}
+
+@plugin 'daisyui/theme' {
+  name: 'smarthrms';
+  default: true;
+  prefersdark: true;
+  color-scheme: dark;
+
+  /* Surfaces are translucent so the background shows through; see the blur rules below. */
+  --color-base-100: rgb(14 12 52 / 0.55);
+  --color-base-200: rgb(9 8 38 / 0.5);
+  --color-base-300: rgb(72 64 150 / 0.35);
+  --color-base-content: #e6e4ff;
+  --color-primary: #7c3aed;
+  --color-primary-content: #ffffff;
+  --color-secondary: #c026d3;
+  --color-secondary-content: #ffffff;
+  --color-accent: #4f46e5;
+  --color-accent-content: #ffffff;
+  --color-neutral: #1e1b4b;
+  --color-neutral-content: #e6e4ff;
+  --color-info: #38bdf8;
+  --color-info-content: #04111d;
+  --color-success: #22c55e;
+  --color-success-content: #03140a;
+  --color-warning: #f59e0b;
+  --color-warning-content: #1f1300;
+  --color-error: #f43f5e;
+  --color-error-content: #ffffff;
+
+  --radius-selector: 0.5rem;
+  --radius-field: 0.5rem;
+  --radius-box: 0.75rem;
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 1px;
+  --depth: 1;
+  --noise: 0;
 }
 
 html,
 body,
 #root {
   min-height: 100%;
+}
+
+/* The fallback colour goes on html (painted below everything). A body background would paint over the
+   negative-z-index artwork layer below and hide it. */
+html {
+  background-color: #05042a;
+}
+
+/* The artwork sits in a fixed layer behind the app (background-attachment: fixed is unreliable on mobile). */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background: #05042a url('./assets/background.webp') center / cover no-repeat;
+}
+
+/* Glass surfaces: translucent theme colors + blur keep text readable over the waves. */
+.card,
+aside,
+header,
+.menu-dropdown,
+.toast .alert {
+  backdrop-filter: blur(3px);
+}
+
+/* Dialogs and native dropdown lists stay opaque for readability. */
+.modal-box {
+  background-color: rgb(14 12 52 / 0.97);
+}
+
+select option {
+  background-color: #0e0c34;
 }

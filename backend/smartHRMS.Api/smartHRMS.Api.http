@@ -129,7 +129,9 @@ Accept: application/json
 GET {{smartHRMS.Api_HostAddress}}/api/employees/{{employeeId}}/documents
 Accept: application/json
 
-### Upload employee document (documentType: Nid, Passport, EducationalCertificate, Cv, JoiningLetter, ContractPaper, Other)
+### Upload employee document
+### documentType: Nid, Passport, BirthCertificate, EducationalCertificate, ExperienceCertificate, JoiningLetter, Cv, TinCertificate, ContractPaper, Other
+### documentName is required; issueDate/expiryDate (yyyy-MM-dd) and description are optional.
 POST {{smartHRMS.Api_HostAddress}}/api/employees/{{employeeId}}/documents
 Content-Type: multipart/form-data; boundary=----docBoundary
 
@@ -137,6 +139,14 @@ Content-Type: multipart/form-data; boundary=----docBoundary
 Content-Disposition: form-data; name="documentType"
 
 Nid
+------docBoundary
+Content-Disposition: form-data; name="documentName"
+
+National ID card
+------docBoundary
+Content-Disposition: form-data; name="issueDate"
+
+2020-05-01
 ------docBoundary
 Content-Disposition: form-data; name="description"
 
@@ -155,12 +165,16 @@ Accept: application/json
 ### Download a document
 GET {{smartHRMS.Api_HostAddress}}/api/employees/{{employeeId}}/documents/{{documentId}}/download
 
-### Update a document's type/description
+### Update a document's metadata (the file is not changed). Omitted documentType/documentName keep their value;
+### omitted issueDate/expiryDate/description are cleared.
 PUT {{smartHRMS.Api_HostAddress}}/api/employees/{{employeeId}}/documents/{{documentId}}
 Content-Type: application/json
 
 {
   "documentType": "Passport",
+  "documentName": "Passport",
+  "issueDate": "2021-03-10",
+  "expiryDate": "2031-03-09",
   "description": "Passport copy"
 }
 

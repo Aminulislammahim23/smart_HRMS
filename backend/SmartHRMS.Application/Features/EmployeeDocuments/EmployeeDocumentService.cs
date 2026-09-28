@@ -9,6 +9,7 @@ namespace smartHRMS.Application.Features.EmployeeDocuments;
 public class EmployeeDocumentService : IEmployeeDocumentService
 {
     private const int MaxFileNameLength = 255;
+    private const int MaxDocumentNameLength = 200;
 
     private readonly IEmployeeDocumentRepository _documentRepository;
     private readonly IEmployeeRepository _employeeRepository;
@@ -32,6 +33,10 @@ public class EmployeeDocumentService : IEmployeeDocumentService
         await EnsureEmployeeExistsAsync(employeeId, cancellationToken);
 
         var documentType = ParseDocumentType(upload.DocumentType);
+        var documentName = ValidateDocumentName(upload.DocumentName)
+            ?? throw new BadRequestException("The document name is required.");
+        ValidateDates(upload.IssueDate, upload.ExpiryDate);
+
         var description = NormalizeOptional(upload.Description);
         if (description?.Length > 500)
         {
@@ -54,6 +59,11 @@ public class EmployeeDocumentService : IEmployeeDocumentService
             throw new BadRequestException($"Only these file types are allowed: {string.Join(", ", _options.AllowedExtensions)}.");
         }
 
+        if (!EmployeeDocumentPolicy.IsAcceptableClientContentType(extension, upload.ContentType))
+        {
+            throw new BadRequestException($"The file type '{upload.ContentType}' does not match a {extension} file.");
+        }
+
         if (!await EmployeeDocumentPolicy.MatchesSignatureAsync(upload.Content, extension, cancellationToken))
         {
             throw new BadRequestException($"The file content does not match a real {extension} file.");
@@ -67,6 +77,9 @@ public class EmployeeDocumentService : IEmployeeDocumentService
         {
             EmployeeId = employeeId,
             DocumentType = documentType,
+            DocumentName = documentName,
+            IssueDate = upload.IssueDate?.Date,
+            ExpiryDate = upload.ExpiryDate?.Date,
             FileName = SanitizeFileName(upload.FileName, extension),
             FilePath = storageKey,
             ContentType = EmployeeDocumentPolicy.GetContentType(extension),
@@ -123,7 +136,16 @@ public class EmployeeDocumentService : IEmployeeDocumentService
     {
         var document = await GetActiveAsync(employeeId, documentId, cancellationToken);
 
+        // DocumentName is optional here (omitted = keep), but a name that is sent can't be blank.
+        var documentName = dto.DocumentName is null
+            ? document.DocumentName
+            : ValidateDocumentName(dto.DocumentName) ?? throw new BadRequestException("The document name cannot be blank.");
+        ValidateDates(dto.IssueDate, dto.ExpiryDate);
+
         document.DocumentType = dto.DocumentType ?? document.DocumentType;
+        document.DocumentName = documentName;
+        document.IssueDate = dto.IssueDate?.Date;
+        document.ExpiryDate = dto.ExpiryDate?.Date;
         document.Description = NormalizeOptional(dto.Description);
         document.UpdatedAt = DateTime.UtcNow;
 
@@ -154,6 +176,9 @@ public class EmployeeDocumentService : IEmployeeDocumentService
             Id = document.Id,
             EmployeeId = document.EmployeeId,
             DocumentType = document.DocumentType.ToString(),
+            DocumentName = document.DocumentName,
+            IssueDate = document.IssueDate,
+            ExpiryDate = document.ExpiryDate,
             FileName = document.FileName,
             ContentType = document.ContentType,
             FileSizeBytes = document.FileSizeBytes,
@@ -228,6 +253,26 @@ public class EmployeeDocumentService : IEmployeeDocumentService
 
         var maxNameLength = MaxFileNameLength - extension.Length;
         return (name.Length > maxNameLength ? name[..maxNameLength] : name) + extension;
+    }
+
+    /// <summary>Trimmed name, or null when blank. Throws when too long.</summary>
+    private static string? ValidateDocumentName(string? value)
+    {
+        var name = NormalizeOptional(value);
+        if (name?.Length > MaxDocumentNameLength)
+        {
+            throw new BadRequestException($"The document name must be {MaxDocumentNameLength} characters or fewer.");
+        }
+
+        return name;
+    }
+
+    private static void ValidateDates(DateTime? issueDate, DateTime? expiryDate)
+    {
+        if (issueDate is not null && expiryDate is not null && expiryDate.Value.Date < issueDate.Value.Date)
+        {
+            throw new BadRequestException("The expiry date cannot be earlier than the issue date.");
+        }
     }
 
     private static string? NormalizeOptional(string? value)

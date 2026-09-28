@@ -18,7 +18,10 @@ public class AppExceptionHandler : IExceptionHandler
 
     public async ValueTask<bool> TryHandleAsync(HttpContext httpContext, Exception exception, CancellationToken cancellationToken)
     {
-        if (exception is OperationCanceledException && httpContext.RequestAborted.IsCancellationRequested)
+        // A client that disconnects mid-request surfaces as different exception types: OperationCanceledException,
+        // or a SqlException / InvalidOperationException ("Operation cancelled by user") from an aborted query.
+        // Whatever the type, nobody is waiting for the response: don't log an error or try to write a body.
+        if (httpContext.RequestAborted.IsCancellationRequested)
         {
             _logger.LogDebug("Request was cancelled by the client.");
             httpContext.Response.StatusCode = ClientClosedRequest;

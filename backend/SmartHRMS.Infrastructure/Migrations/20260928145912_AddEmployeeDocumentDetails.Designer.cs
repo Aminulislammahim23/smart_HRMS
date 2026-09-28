@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using smartHRMS.Infrastructure.Persistence;
 
@@ -11,9 +12,11 @@ using smartHRMS.Infrastructure.Persistence;
 namespace smartHRMS.Infrastructure.Migrations
 {
     [DbContext(typeof(SmartHRMSDbContext))]
-    partial class SmartHRMSDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260928145912_AddEmployeeDocumentDetails")]
+    partial class AddEmployeeDocumentDetails
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder

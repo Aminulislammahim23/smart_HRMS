@@ -49,6 +49,23 @@ internal static class EmployeeDocumentPolicy
 
     public static string GetContentType(string extension) => KnownFormats[extension].ContentType;
 
+    /// <summary>
+    /// The client-declared Content-Type must agree with the extension. Missing or generic types are accepted because
+    /// some browsers send application/octet-stream for Office files; the signature check is what really proves the format.
+    /// </summary>
+    public static bool IsAcceptableClientContentType(string extension, string? contentType)
+    {
+        var declared = contentType?.Split(';')[0].Trim();
+        if (string.IsNullOrEmpty(declared) || declared.Equals("application/octet-stream", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var expected = KnownFormats[extension].ContentType;
+        return declared.Equals(expected, StringComparison.OrdinalIgnoreCase)
+            || (expected == "image/jpeg" && declared.Equals("image/pjpeg", StringComparison.OrdinalIgnoreCase));
+    }
+
     public static async Task<bool> MatchesSignatureAsync(Stream content, string extension, CancellationToken cancellationToken)
     {
         var header = await FileSignature.ReadHeaderAsync(content, 8, cancellationToken);

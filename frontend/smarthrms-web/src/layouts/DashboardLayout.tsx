@@ -17,7 +17,7 @@ export default function DashboardLayout() {
         checked={menuOpen}
         onChange={(event) => setMenuOpen(event.target.checked)}
       />
-      <div className="drawer-content flex min-h-screen flex-col bg-base-200/60">
+      <div className="drawer-content flex min-h-screen flex-col">
         <Topbar onMenuClick={() => setMenuOpen(true)} />
         <main className="mx-auto w-full max-w-7xl flex-1 p-4 lg:p-6">
           <Suspense fallback={<Loading />}>

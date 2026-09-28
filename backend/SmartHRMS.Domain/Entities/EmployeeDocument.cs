@@ -15,6 +15,15 @@ public class EmployeeDocument : BaseEntity
 
     public EmployeeDocumentType DocumentType { get; set; }
 
+    /// <summary>Title given by HR, e.g. "National ID card". Shown in lists; independent of the file name.</summary>
+    public string DocumentName { get; set; } = string.Empty;
+
+    /// <summary>Optional date the document was issued (date only).</summary>
+    public DateTime? IssueDate { get; set; }
+
+    /// <summary>Optional expiry date (passport, contract, ...). Never earlier than <see cref="IssueDate"/>.</summary>
+    public DateTime? ExpiryDate { get; set; }
+
     /// <summary>Sanitized original file name, used only as the download name. Never used to locate the file.</summary>
     public string FileName { get; set; } = string.Empty;
 

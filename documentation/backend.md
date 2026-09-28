@@ -1,56 +1,81 @@
-# Smart HRMS Backend Documentation
+# SmartHRMS Backend Documentation
 
-## 1. Overview
+> Describes the code, database and API **as they are after the Day 1–12 audit (2026-09-28)**. Everything marked as
+> implemented was verified at runtime against the SQL Server database (see §22 and §23). Planned work is listed only in
+> §24 and is clearly marked as not implemented.
 
-This project is the backend API for a Human Resource Management System, built with ASP.NET Core and Entity Framework Core using Clean Architecture. As of Day 1–11 it provides a stable foundation (project structure, database schema, domain layer, error handling) plus: Employees (CRUD, job information, profile photo), a complete Employee Profile (personal details, addresses, emergency contacts, education, experience, documents, one-call profile view), Departments and Designations.
+---
 
-- ASP.NET Core Web API (.NET 10)
-- Entity Framework Core with SQL Server
-- Clean Architecture: Domain → Application → Infrastructure → API
-- DI-based service/repository registration per layer
-- Code-first EF Core migrations
-- Standard `ApiResponse<T>` envelope (`success` / `message` / `data` / `errors`) for every success and error response
-- Centralized exception handling (`AppExceptionHandler`) that returns the standard envelope
-- DTO validation with Data Annotations (plus a reusable `[NotDefault]` attribute for `Guid`/`DateTime`)
-- Swagger UI (Development only) over the built-in OpenAPI document, including working file-upload testing
-- Employee profile photo support: local disk storage behind a swappable `IFileStorageService` abstraction
-- Department & Designation management with soft-delete deactivation and delete protection
-- Employee document management: private storage outside `wwwroot`, configurable allowed types/size, content-signature checks, soft delete
-- xUnit test project (150 unit tests) for the Employee/Profile/Document/Department/Designation services, DTO validation, `ApiResponse` and photo upload/removal
+## 1. Project Overview
+
+**SmartHRMS** is a Human Resource Management System. This repository contains its backend: an ASP.NET Core Web API
+that stores HR data in SQL Server and serves it as JSON to the React frontend in `frontend/smarthrms-web`.
+
+**Current scope (Day 1–12):**
+
+| Area | What exists |
+|---|---|
+| Organization | Departments and Designations: CRUD, soft-delete (deactivation), delete protection |
+| Employees | CRUD with job information (department, designation, joining date, employment type, salary, status), deactivation and reactivation, profile photo |
+| Employee profile | Personal details (gender, marital status, blood group, nationality, NID, passport), addresses, emergency contacts, education, work experience, and a one-call profile view |
+| Employee documents | Upload, list, view metadata, download, edit metadata and soft-delete HR documents (NID, passport, certificates, CV, ...) kept in private storage |
+| Platform | Standard response envelope, centralized error handling, validation, OpenAPI/Swagger, CORS for the frontend |
+
+**Not implemented:** authentication and authorization (every endpoint is anonymous), attendance, leave, payroll,
+recruitment, performance (see §17 and §24).
 
 ### Development history
 
 | Day | Scope |
 |-----|-------|
 | 1 | Solution and project setup (.NET 10 Web API) |
-| 2 | Database design: `Department`, `Designation`, `Employee`, `ApplicationUser` entities |
-| 3 | Clean Architecture split into Domain / Application / Infrastructure / API |
-| 4–5 | Backend foundation: DI per layer, EF Core configurations + migrations, `ApiResponse<T>`, exception handling, validation |
+| 2 | Database design: `Department`, `Designation`, `Employee`, `ApplicationUser` |
+| 3 | Clean Architecture split: Domain / Application / Infrastructure / API |
+| 4–5 | DI per layer, EF Core configurations + migrations, `ApiResponse<T>`, exception handling, validation |
 | 6 | Employee workflow end-to-end + profile photo storage |
-| 7 | Employee CRUD audit and fixes: input trimming, blank phone accepted, UTC audit timestamps, dead DTOs removed |
-| 8 | Department & Designation management (CRUD, delete safety, active-status rules for employee assignment) |
-| 9 | Employee management completed: `Address`, `Gender`, `EmploymentType`; computed `fullName`/`isActive`; status changes and reactivation via PUT; enums as strings in JSON; unique-index races mapped to `409`; JSON errors no longer expose .NET type names |
-| 10 | Employee profile & documents: blood group, permanent address, emergency contact, basic salary; `GET /api/employees/{id}/profile`; `EmployeeDocuments` module (upload, list, metadata, download, update, soft delete) with private storage; unique photo filename per upload |
-| 11 | Complete employee profile: `EmployeePersonalDetails` (0..1), `EmployeeAddresses` (Present/Permanent), `EmployeeEmergencyContacts`, `EmployeeEducations`, `EmployeeExperiences` with nested CRUD APIs; the Day 9–10 flat address / emergency-contact / gender / blood-group columns moved into these tables; profile endpoint extended; `ExperienceCertificate` document type |
+| 7 | Employee CRUD audit and fixes (input trimming, blank phone, UTC timestamps) |
+| 8 | Department & Designation management (CRUD, delete safety, active-status rules) |
+| 9 | Employee management completed (employment type, computed `fullName`/`isActive`, status changes and reactivation, enums as strings, unique-index races → 409) |
+| 10 | Employee profile endpoint and the `EmployeeDocuments` module (private storage, soft delete) |
+| 11 | Complete employee profile: personal details, addresses, emergency contacts, education, experience (flat Day 9–10 columns moved into these tables) |
+| 12 | Employee document management: document name, issue/expiry dates, Birth/TIN certificate types, Content-Type cross-check; delete remains a soft delete |
+| Audit (Day 1–12) | Cancelled requests no longer logged as server errors; employee list ordered by employee code; documentation rewritten |
 
 ---
 
-## 2. Technology Stack
+## 2. Backend Architecture
 
-### Backend Framework
-- ASP.NET Core 10 / C#
-- ASP.NET Core Web API (`Microsoft.NET.Sdk.Web`)
+Clean Architecture with four projects. Requests flow through the layers like this (verified for every feature):
 
-### Database
-- Microsoft SQL Server (local instance: `MAHIM\SQLEXPRESS`)
-- EF Core 10 + EF Core SQL Server provider
+```text
+HTTP request
+   ↓
+Controller (smartHRMS.Api)            thin: binds the request, calls one service method, wraps the result
+   ↓
+Application service                   business rules and validation, maps entities ↔ DTOs
+   ↓
+Repository interface (Application)  ← implemented by → Repository (Infrastructure)
+   ↓
+EF Core SmartHRMSDbContext
+   ↓
+SQL Server (SmartHRMSDB)
+```
 
-### Testing
-- xUnit + `Microsoft.NET.Test.Sdk`
+File storage follows the same idea: services depend on `IFileStorageService` (photos) and `IDocumentStorageService`
+(documents), implemented in Infrastructure by local-disk classes.
 
-### Development Tools
-- .NET SDK 10
-- Entity Framework Core CLI (`dotnet ef`)
+**Dependency direction** (no circular references; checked in the `.csproj` files):
+
+```text
+smartHRMS.Api            → SmartHRMS.Application, SmartHRMS.Infrastructure
+SmartHRMS.Infrastructure → SmartHRMS.Domain, SmartHRMS.Application (implements its interfaces)
+SmartHRMS.Application    → SmartHRMS.Domain
+SmartHRMS.Domain         → (nothing)
+smartHRMS.Tests          → SmartHRMS.Application, SmartHRMS.Domain
+```
+
+`Application` has no EF Core or ASP.NET Core dependency: uploads reach it as plain `Stream` + metadata DTOs, never as
+`IFormFile`.
 
 ---
 
@@ -59,844 +84,707 @@ This project is the backend API for a Human Resource Management System, built wi
 ```text
 backend/
   smartHRMS.slnx
-  smartHRMS.Api/                        (Microsoft.NET.Sdk.Web)
-    Program.cs
-    appsettings.json
-    appsettings.Development.json
-    smartHRMS.Api.http                  (sample requests for the IDE HTTP client)
-    Controllers/
-      HealthController.cs
-      EmployeesController.cs
-      DepartmentsController.cs
-      DesignationsController.cs
-      EmployeeDocumentsController.cs    (/api/employees/{employeeId}/documents)
-      EmployeePersonalDetailsController.cs, EmployeeAddressesController.cs, EmployeeEmergencyContactsController.cs,
-      EmployeeEducationsController.cs, EmployeeExperiencesController.cs   (Day 11 profile records)
-    Extensions/
-      ApiServiceCollectionExtensions.cs (AddApiControllers: validation-error envelope, enums as strings)
-    Middleware/
-      AppExceptionHandler.cs
-      StatusCodeResponseWriter.cs       (envelope for body-less 404/405/415)
-    OpenApi/
-      FormFileOperationTransformer.cs   (fixes IFormFile -> multipart/form-data in Swagger, incl. extra form fields)
-    Properties/
-      launchSettings.json
-    wwwroot/
-      uploads/.gitkeep                  (keeps the folder in git; uploaded files are gitignored)
-      uploads/employees/                (photo storage root; served as static files)
-    App_Data/employee-documents/       (PRIVATE document storage; not served, gitignored)
+  smartHRMS.Api/                        ASP.NET Core Web API (Microsoft.NET.Sdk.Web)
+    Program.cs                          startup and middleware pipeline (§4)
+    appsettings.json / appsettings.Development.json
+    smartHRMS.Api.http                  sample requests for the IDE HTTP client
+    Controllers/                        Health, Employees, Departments, Designations, EmployeeDocuments,
+                                        EmployeePersonalDetails, EmployeeAddresses, EmployeeEmergencyContacts,
+                                        EmployeeEducations, EmployeeExperiences
+    Extensions/ApiServiceCollectionExtensions.cs   controllers, JSON enum handling, validation-error envelope
+    Middleware/AppExceptionHandler.cs              exception → status code + envelope
+    Middleware/StatusCodeResponseWriter.cs         envelope for body-less 404/405/415
+    OpenApi/FormFileOperationTransformer.cs        correct multipart/form-data schema for file uploads
+    wwwroot/uploads/employees/          PUBLIC photo storage (served as static files, gitignored)
+    App_Data/employee-documents/        PRIVATE document storage (never served, gitignored)
 
-  SmartHRMS.Application/                (class library, no EF Core dependency)
-    DependencyInjection.cs              (AddApplication)
-    Common/
-      Exceptions/
-        NotFoundException.cs
-        ConflictException.cs
-        BadRequestException.cs
-      Models/
-        ApiResponse.cs                  (ApiResponse<T> + ApiResponse shortcuts)
-      Text/
-        InputText.cs                    (trim / blank-to-null helpers)
-      Files/
-        FileSignature.cs                (shared magic-byte check for photos and documents)
-      Validation/
-        NotDefaultAttribute.cs          ([NotDefault] for Guid / DateTime)
-    Interfaces/
-      IEmployeeRepository.cs
-      IDepartmentRepository.cs
-      IDesignationRepository.cs
-      IFileStorageService.cs            (storage-agnostic file save/delete abstraction)
-      IDocumentStorageService.cs        (private document storage: save/open/delete)
-      IEmployeeDocumentRepository.cs
-      IEmployeeOwnedRepository.cs       (generic, employee-scoped repository for profile records)
-    Features/
-      Employees/
-        IEmployeeService.cs
-        EmployeeService.cs
-        EmployeePhotoPolicy.cs          (allowed types/size + magic-byte signature check)
-        EmployeeStatusRules.cs          (which statuses count as "current" employees)
-        IEmployeeProfileService.cs
-        EmployeeProfileService.cs       (read-only profile: employee + every profile record)
-        EmployeeOwnedRecordService.cs   (shared list/get/create/update/delete workflow for profile records)
-        EmployeeRepositoryExtensions.cs (EnsureExistsAsync guard)
-        Dtos/
-          EmployeeDto.cs
-          CreateEmployeeDto.cs
-          UpdateEmployeeDto.cs
-          UploadEmployeePhotoDto.cs     (Stream + metadata; no IFormFile in Application)
-          EmployeeProfileDto.cs         (profile + PersonalInformation + JobInformation sections)
-      EmployeePersonalDetails/  EmployeeAddresses/  EmployeeEmergencyContacts/  EmployeeEducations/  EmployeeExperiences/
-                                        (Day 11: I<Name>Service.cs, <Name>Service.cs, Dtos/ Create…Dto, Update…Dto, …Dto)
-      EmployeeDocuments/
-        IEmployeeDocumentService.cs
-        EmployeeDocumentService.cs
-        EmployeeDocumentOptions.cs      (bound from appsettings "EmployeeDocuments")
-        EmployeeDocumentPolicy.cs       (verifiable formats, content types, startup validation)
-        Dtos/                           (EmployeeDocumentDto, UploadEmployeeDocumentDto, UpdateEmployeeDocumentDto, EmployeeDocumentFileDto)
-      Departments/
-        IDepartmentService.cs
-        DepartmentService.cs
-        Dtos/                           (DepartmentDto, CreateDepartmentDto, UpdateDepartmentDto)
-      Designations/                    (same shape as Departments/)
+  SmartHRMS.Application/                business logic (class library)
+    DependencyInjection.cs              AddApplication(documentOptions)
+    Common/Exceptions/                  NotFoundException, ConflictException, BadRequestException
+    Common/Models/ApiResponse.cs        response envelope
+    Common/Files/FileSignature.cs       magic-byte checks shared by photos and documents
+    Common/Text/InputText.cs            trim / blank-to-null helpers
+    Common/Validation/NotDefaultAttribute.cs   [NotDefault] for Guid / DateTime
+    Interfaces/                         repository and storage interfaces
+    Features/Employees/                 EmployeeService, EmployeeProfileService, EmployeePhotoPolicy,
+                                        EmployeeStatusRules, EmployeeOwnedRecordService (shared base), Dtos/
+    Features/Departments/, Features/Designations/
+    Features/EmployeePersonalDetails/, EmployeeAddresses/, EmployeeEmergencyContacts/,
+             EmployeeEducations/, EmployeeExperiences/
+    Features/EmployeeDocuments/         EmployeeDocumentService, EmployeeDocumentPolicy, EmployeeDocumentOptions, Dtos/
 
-  SmartHRMS.Domain/                      (class library, no dependencies)
-    Common/
-      BaseEntity.cs
-      EmployeeOwnedEntity.cs            (BaseEntity + EmployeeId, for profile records)
-    Entities/
-      Department.cs
-      Designation.cs
-      Employee.cs
-      ApplicationUser.cs
-      EmployeeDocument.cs
-      EmployeePersonalDetails.cs, EmployeeAddress.cs, EmployeeEmergencyContact.cs,
-      EmployeeEducation.cs, EmployeeExperience.cs
-    Enums/
-      EmployeeStatus.cs
-      BloodGroup.cs
-      MaritalStatus.cs
-      AddressType.cs
-      EmployeeDocumentType.cs
-      EmploymentType.cs
-      Gender.cs
+  SmartHRMS.Domain/                     entities and enums (no dependencies)
+    Common/BaseEntity.cs, Common/EmployeeOwnedEntity.cs
+    Entities/                           Department, Designation, Employee, ApplicationUser, EmployeeDocument,
+                                        EmployeePersonalDetails, EmployeeAddress, EmployeeEmergencyContact,
+                                        EmployeeEducation, EmployeeExperience
+    Enums/                              EmployeeStatus, EmploymentType, Gender, MaritalStatus, BloodGroup,
+                                        AddressType, EmployeeDocumentType
 
-  SmartHRMS.Infrastructure/              (class library)
-    DependencyInjection.cs              (AddInfrastructure)
-    Persistence/
-      SmartHRMSDbContext.cs
-      Configurations/
-        DepartmentConfiguration.cs
-        DesignationConfiguration.cs
-        EmployeeConfiguration.cs
-        ApplicationUserConfiguration.cs
-        EmployeeDocumentConfiguration.cs
-        EmployeePersonalDetailsConfiguration.cs, EmployeeAddressConfiguration.cs, EmployeeEmergencyContactConfiguration.cs,
-        EmployeeEducationConfiguration.cs, EmployeeExperienceConfiguration.cs
-    Repositories/
-      EmployeeRepository.cs
-      DepartmentRepository.cs
-      DesignationRepository.cs
-      EmployeeDocumentRepository.cs
-      EmployeeOwnedRepository.cs        (generic IEmployeeOwnedRepository<T> implementation)
-    Storage/
-      LocalFileStorageService.cs        (IFileStorageService impl: saves under wwwroot)
-      LocalDocumentStorageService.cs    (IDocumentStorageService impl: saves under App_Data)
-      SafeStoragePath.cs                (keeps every resolved path inside its storage root)
-    Migrations/
+  SmartHRMS.Infrastructure/             data access and storage
+    DependencyInjection.cs              AddInfrastructure(connectionString, photoRoot, documentRoot)
+    Persistence/SmartHRMSDbContext.cs
+    Persistence/Configurations/         one IEntityTypeConfiguration<T> per entity
+    Repositories/                       Employee, Department, Designation, EmployeeDocument, EmployeeOwned<T>
+    Storage/                            LocalFileStorageService, LocalDocumentStorageService, SafeStoragePath
+    Migrations/                         7 migrations (§20)
 
-  smartHRMS.Tests/                       (xUnit test project)
-    Fakes/
-      FakeEmployeeRepository.cs
-      FakeDepartmentRepository.cs
-      FakeDesignationRepository.cs
-      FakeEmployeeDocumentRepository.cs
-      FakeDocumentStorageService.cs
-      FakeEmployeeOwnedRepository.cs
-      FakeFileStorageService.cs
-    Common/
-      ApiResponseTests.cs
-    Features/
-      Employees/
-        EmployeeServiceTests.cs
-        EmployeeDtoValidationTests.cs
-        EmployeePhotoTests.cs
-        EmployeeProfileServiceTests.cs
-      Departments/
-        DepartmentServiceTests.cs
-        DepartmentDtoValidationTests.cs (covers Department + Designation DTOs)
-      Designations/
-        DesignationServiceTests.cs
-      EmployeeDocuments/
-        EmployeeDocumentServiceTests.cs
-      EmployeeProfile/
-        EmployeeProfileRecordTests.cs   (personal details, addresses, contacts, education, experience)
+  smartHRMS.Tests/                      xUnit unit tests with in-memory fakes (169 tests)
 ```
 
-> **Folder-name casing:** the folders on disk are `SmartHRMS.Application`, `SmartHRMS.Domain` and `SmartHRMS.Infrastructure` (capital S) while the project files inside are `smartHRMS.*.csproj`. `smartHRMS.slnx` and every `ProjectReference` use exactly these paths (fixed in the Day 1–10 audit; verified by building in a case-sensitive folder), so the solution also builds on Linux/macOS/Docker/CI. Keep the exact casing when adding references.
-
-### Dependency direction (verified, no circular references)
-
-```text
-smartHRMS.Api
-    -> SmartHRMS.Application
-    -> SmartHRMS.Infrastructure
-
-SmartHRMS.Application
-    -> SmartHRMS.Domain
-
-SmartHRMS.Infrastructure
-    -> SmartHRMS.Domain
-    -> SmartHRMS.Application   (implements Application's repository interfaces)
-
-smartHRMS.Tests
-    -> SmartHRMS.Application
-    -> SmartHRMS.Domain
-```
-
-`Domain` has zero project dependencies. `Application` has no EF Core dependency — it only knows about repository *interfaces*, which `Infrastructure` implements. This keeps business logic (in `EmployeeService`) framework-agnostic.
+> **Folder-name casing:** the folders `SmartHRMS.Application`, `SmartHRMS.Domain`, `SmartHRMS.Infrastructure` start with
+> a capital S while the project files inside are `smartHRMS.*.csproj`. The solution file and every `ProjectReference` use
+> exactly these paths, so the solution also builds on case-sensitive file systems. Keep that casing when adding references.
 
 ---
 
-## 4. Application Startup
+## 4. Technologies
 
-Configured in `smartHRMS.Api/Program.cs`:
+Only packages that are actually referenced:
 
-```csharp
-builder.Logging.ClearProviders();
-builder.Logging.AddConsole();              // console logging only
+| Purpose | Technology |
+|---|---|
+| Runtime / language | .NET 10, C# |
+| Web API | ASP.NET Core (`Microsoft.NET.Sdk.Web`) |
+| API description | `Microsoft.AspNetCore.OpenApi` 10.0.12 (document at `/openapi/v1.json`) + `Swashbuckle.AspNetCore.SwaggerUI` 10.2.3 (UI at `/swagger`), Development only |
+| Data access | Entity Framework Core 10.0.12 with the SQL Server provider; `Microsoft.EntityFrameworkCore.Design`/`.Tools` for migrations |
+| Database | Microsoft SQL Server (local instance `MAHIM\SQLEXPRESS`, database `SmartHRMSDB`, Windows authentication) |
+| Validation | Data Annotations + custom `[NotDefault]`, plus rules in the services (no FluentValidation) |
+| Tests | xUnit 2.9.2, `Microsoft.NET.Test.Sdk` |
 
-builder.Services.AddApiControllers();      // AddControllers + envelope for validation errors
-builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddOpenApi(options => options.AddOperationTransformer<FormFileOperationTransformer>());
+No authentication packages (JWT, Identity) are installed.
 
-builder.Services.AddExceptionHandler<AppExceptionHandler>();
-builder.Services.AddProblemDetails();
+### Startup pipeline (`Program.cs`)
 
-builder.Services.AddApplication();
+Services:
+1. Console logging; controllers with JSON string enums and the validation-error envelope (`AddApiControllers`).
+2. OpenAPI with `FormFileOperationTransformer`.
+3. CORS policy `Frontend` from `Cors:AllowedOrigins` (§17).
+4. `AppExceptionHandler` + problem details.
+5. `AddApplication(documentOptions)`: document rules from the `EmployeeDocuments` section are validated here, so the
+   API **refuses to start** with an unusable configuration.
+6. `AddInfrastructure(connectionString, webRootPath, documentStoragePath)`. The API refuses to start if the document
+   storage path is inside `wwwroot`.
 
-var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
-    ?? throw new InvalidOperationException("Connection string 'DefaultConnection' was not found.");
-
-// wwwroot is the only folder served as static content (below), so uploaded files never expose
-// source, configuration, or any other part of the application.
-var webRootPath = string.IsNullOrWhiteSpace(builder.Environment.WebRootPath)
-    ? Path.Combine(builder.Environment.ContentRootPath, "wwwroot")
-    : builder.Environment.WebRootPath;
-builder.Services.AddInfrastructure(connectionString, webRootPath);
-
-var app = builder.Build();
-
-app.UseExceptionHandler();
-app.UseStatusCodePages(StatusCodeResponseWriter.WriteAsync);
-app.UseStaticFiles();                       // serves wwwroot/uploads/... at /uploads/...
-if (app.Environment.IsDevelopment())
-{
-    app.MapOpenApi();                       // /openapi/v1.json
-    app.UseSwaggerUI(options => options.SwaggerEndpoint("/openapi/v1.json", "SmartHRMS API v1"));   // /swagger
-}
-if (!string.IsNullOrWhiteSpace(builder.Configuration["https_port"]) ||
-    !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("ASPNETCORE_HTTPS_PORT")))
-{
-    app.UseHttpsRedirection();
-}
-app.UseAuthorization();
-app.MapControllers();
-```
-
-Swagger UI (`Swashbuckle.AspNetCore.SwaggerUI`) is served at `/swagger` in Development only; the OpenAPI document itself comes from the built-in `Microsoft.AspNetCore.OpenApi`. When JWT is added later, register a Bearer security scheme with an OpenAPI document transformer and the **Authorize** button will appear automatically.
-
-Each layer registers its own services through a `DependencyInjection.cs` extension method (`AddApplication()`, `AddInfrastructure(connectionString, fileStorageRootPath)`), rather than wiring `DbContext`/repositories directly in the API project. `fileStorageRootPath` is resolved from `IWebHostEnvironment.WebRootPath` in `Program.cs` (falling back to `<ContentRoot>/wwwroot` if unset) and passed in — `Infrastructure` never reads it from configuration itself, keeping it swappable per environment.
-
-### CORS (frontend access)
-
-The React frontend (`frontend/smarthrms-web`) calls the API from another origin, so `Program.cs` registers a named CORS policy (`Frontend`) whose allowed origins come from configuration:
-
-```json
-// appsettings.Development.json
-"Cors": {
-  "AllowedOrigins": [ "http://localhost:5173", "http://localhost:4173" ]
-}
-```
-
-- Only listed origins get `Access-Control-Allow-Origin`; any header and method are allowed for them, and `Content-Disposition` is exposed for document downloads.
-- `appsettings.json` lists no origins, so outside Development cross-origin browser calls are refused until the deployed frontend's origin is added.
-- `app.UseCors(...)` is the first middleware, so error responses (400/404/409/500 from `AppExceptionHandler` and `StatusCodeResponseWriter`) also carry the CORS headers and the frontend can read their messages.
-
-### Database configuration
-
-`appsettings.json`:
-
-```json
-{
-  "ConnectionStrings": {
-    "DefaultConnection": "Server=MAHIM\\SQLEXPRESS;Database=SmartHRMSDB;Trusted_Connection=True;TrustServerCertificate=True;"
-  }
-}
-```
-
-Uses Windows/Trusted authentication against the local `SQLEXPRESS` instance — no credentials are stored in configuration.
+Middleware order: `UseCors` (first, so error responses carry CORS headers) → `UseExceptionHandler` →
+`UseStatusCodePages` → `UseStaticFiles` (wwwroot) → OpenAPI + Swagger UI (Development) → HTTPS redirection (only when an
+HTTPS port is configured) → `UseAuthorization` (no policies exist) → `MapControllers`.
 
 ---
 
-## 5. Database Context
-
-`SmartHRMSDbContext` (namespace `smartHRMS.Infrastructure.Persistence`) is the EF Core context, registered via `SmartHRMS.Infrastructure/DependencyInjection.cs`.
-
-### DbSets
-- `Departments`
-- `Designations`
-- `Employees`
-- `ApplicationUsers`
-- `EmployeeDocuments`
-- `EmployeePersonalDetails`, `EmployeeAddresses`, `EmployeeEmergencyContacts`, `EmployeeEducations`, `EmployeeExperiences`
-
-### Configuration
-Entity configurations live under `Persistence/Configurations/` as `IEntityTypeConfiguration<T>` classes, applied via:
-
-```csharp
-modelBuilder.ApplyConfigurationsFromAssembly(typeof(SmartHRMSDbContext).Assembly);
-```
-
-`Employee.DepartmentId`, `Employee.DesignationId`, and `ApplicationUser.EmployeeId` all use `DeleteBehavior.Restrict` to avoid multiple cascade-path conflicts in SQL Server.
-
-### Unique-constraint violations → 409
-Services check uniqueness (employee code, email, department/designation name) before saving, but two simultaneous requests can both pass that check. `SmartHRMSDbContext.SaveChangesAsync` catches the resulting SQL Server unique-index error (`2601`/`2627`) and throws the Application layer's `ConflictException`, so the client gets a `409` with the standard envelope instead of a `500`. No database exception text ever reaches the client.
-
-### UTC audit timestamps
-`CreatedAt`/`UpdatedAt` are always written in UTC, but SQL Server's `datetime2` does not store a `DateTimeKind`, so EF would read them back as `Unspecified` and they would serialize without a trailing `Z` (clients would treat them as local time). `OnModelCreating` therefore applies a value converter to `CreatedAt`/`UpdatedAt` on every `BaseEntity` that marks them as UTC when read. It is deliberately **not** applied to date-only values such as `DateOfBirth`/`JoiningDate`, which stay unzoned. The converter does not change the schema, so it needed no migration.
-
----
-
-## 6. Core Domain Models
-
-### 6.1 BaseEntity
-- `Id` (`Guid`, generated on creation)
-- `CreatedAt` (`DateTime`, UTC, set on creation)
-- `UpdatedAt` (`DateTime?`, UTC, set by the services on every update, soft delete and photo change)
-
-### 6.2 Department
-- `Name` (required, max 100, unique)
-- `Description` (optional, max 500)
-- `IsActive` (default `true`)
-- `Employees` (collection navigation)
-
-### 6.3 Designation
-- `Name` (required, max 100, unique)
-- `Description` (optional, max 500)
-- `IsActive` (default `true`)
-- `Employees` (collection navigation)
-
-### 6.4 Employee
-- `EmployeeCode` (required, max 50, unique)
-- `FirstName`, `LastName` (required, max 100)
-- `Email` (required, max 200, unique)
-- `Phone` (optional, max 30)
-- `BasicSalary` (optional `decimal(18,2)`, never negative)
-- `DateOfBirth`, `JoiningDate`
-- `EmploymentType` (`EmploymentType` enum, stored as string, required, default `FullTime`: `FullTime`, `PartTime`, `Contract`, `Intern`)
-- `DepartmentId` / `Department` (required FK, `Restrict`)
-- `DesignationId` / `Designation` (required FK, `Restrict`)
-- `Status` (`EmployeeStatus` enum, stored as string, default `Active`)
-- `PhotoUrl` (optional, max 500) — relative URL of the profile photo, e.g. `/uploads/employees/{id}.jpg`; `null` until a photo is uploaded. Stores a reference only, never image bytes and never a physical path, so the storage backend can change without touching this entity (see §9a).
-- `ApplicationUser` (optional 1:1 navigation)
-- Profile navigations (Day 11): `PersonalDetails` (0..1), `Addresses`, `EmergencyContacts`, `Educations`, `Experiences`, `Documents` — see §6.8
-
-> `EmployeeCode` is set on create and cannot be changed afterwards (it is not part of `UpdateEmployeeDto`).
-
-> **Day 11 change:** gender, blood group, present/permanent address and the single emergency contact are no longer columns on `Employee`. They were moved (all 10 existing employees had them empty, so nothing was lost) into the dedicated profile tables in §6.8, which are now the only place they are stored. `DateOfBirth` stays on `Employee` because it is required at hiring time and used by the joining-date rule.
-
-> `Status` (the employment status) is the single source of truth for whether an employee is active — there is intentionally no separate `IsActive` column on `Employee` (unlike `Department`/`Designation`), avoiding duplicate/contradictory state. API responses include a computed `isActive` (`true` when `Status` is `Active` or `OnLeave`) and a computed `fullName`; neither is stored.
-
-### 6.5 EmployeeStatus (enum)
-`Active = 1`, `Inactive = 2`, `Resigned = 3`, `Terminated = 4`, `OnLeave = 5`
-
-### 6.6 ApplicationUser
-- `EmployeeId` (required FK, unique — one user per employee)
-- `Username` (required, max 100, unique)
-- `PasswordHash` (required — never a plain-text password)
-- `IsActive` (default `true`)
-- `Employee` (navigation)
-
-> The `ApplicationUsers` table exists (from `InitialCreate`) but has no service or API yet — it is the foundation for the upcoming authentication work.
-
-### 6.7 EmployeeDocument
-- `EmployeeId` (required FK → `Employee`, `Restrict`)
-- `DocumentType` (`EmployeeDocumentType` enum, stored as string: `Nid`, `Passport`, `EducationalCertificate`, `Cv`, `JoiningLetter`, `ContractPaper`, `Other`)
-- `FileName` (required, max 255) — sanitized original name, used only as the download name
-- `FilePath` (required, max 500) — server-generated storage key (`{employeeId:N}/{random}.pdf`) relative to the private document root; **never returned to clients**
-- `ContentType` (required, max 100) — set by the server from the validated extension, not taken from the client
-- `FileSizeBytes`, `Description` (optional, max 500)
-- `IsActive` (default `true`) — soft delete flag
-- `CreatedAt` is the upload time (returned as `uploadedAt`)
-- Index on (`EmployeeId`, `IsActive`) for the per-employee document list
-
-### 6.8 Employee profile records (Day 11)
-
-All inherit `EmployeeOwnedEntity` (`BaseEntity` + required `EmployeeId` FK → `Employee`, `Restrict`). They are hard-deleted through their own endpoints (they are profile details, not HR history like documents).
-
-| Entity / table | Cardinality | Fields | Database rules |
-|---|---|---|---|
-| `EmployeePersonalDetails` | 0..1 per employee | `Gender`, `MaritalStatus` (`Single`, `Married`, `Divorced`, `Widowed`, `Separated`), `BloodGroup`, `Nationality` (100), `NationalId` (17), `PassportNo` (20) — enums stored as strings | unique `EmployeeId`; unique `NationalId` and `PassportNo` where not null |
-| `EmployeeAddresses` | many (max one per type) | `AddressType` (`Present`/`Permanent`), `Address` (500, required), `City` (100, required), `District` (100, required), `PostalCode` (20) | unique (`EmployeeId`, `AddressType`) |
-| `EmployeeEmergencyContacts` | many | `Name` (150), `Relationship` (50), `Phone` (30) required; `Email` (200), `Address` (500) optional | index on `EmployeeId` |
-| `EmployeeEducations` | many | `Degree` (100) and `Institution` (200) required, free text (no fixed degree list); `Major` (150), `Result` (50); `PassingYear` (int, required) | index on `EmployeeId` |
-| `EmployeeExperiences` | many | `CompanyName` (200), `Designation` (150, free-text job title), `StartDate` required; `EndDate` nullable (null = current job); `Responsibilities` (2000) | index on `EmployeeId` |
-
-`DateOfBirth` is deliberately not repeated in `EmployeePersonalDetails`; the personal-details API shows it read-only from `Employee`.
-
----
-
-## 7. Entity Relationships
-
-- `Department` 1 — * `Employee`
-- `Designation` 1 — * `Employee`
-- `Employee` 1 — 0..1 `ApplicationUser`
-- `Employee` 1 — * `EmployeeDocument`
-- `Employee` 1 — 0..1 `EmployeePersonalDetails`
-- `Employee` 1 — * `EmployeeAddress` (at most one `Present` and one `Permanent`)
-- `Employee` 1 — * `EmployeeEmergencyContact`, `EmployeeEducation`, `EmployeeExperience`
-
-All foreign keys use `DeleteBehavior.Restrict`: deleting a Department/Designation/Employee that still has dependents is blocked at the database level rather than silently cascading.
-
----
-
-## 8. Database Migration Workflow
-
-Run these from the `backend/` directory (project/startup-project names differ from the folder defaults, so pass them explicitly):
-
-### Generate a migration
-```bash
-dotnet ef migrations add <MigrationName> --project SmartHRMS.Infrastructure --startup-project smartHRMS.Api
-```
-
-### Apply migrations to the database
-```bash
-dotnet ef database update --project SmartHRMS.Infrastructure --startup-project smartHRMS.Api
-```
-
-### Remove the last migration
-```bash
-dotnet ef migrations remove --project SmartHRMS.Infrastructure --startup-project smartHRMS.Api
-```
-
-### Applied migrations
-1. `InitialCreate` — Departments, Designations, Employees, ApplicationUsers tables, indexes, FKs.
-2. `UpdateEmployeeStatusToEnum` — narrows `Employees.Status` to `nvarchar(20)` backed by `EmployeeStatus`, drops the redundant `IsActive` column from `Employees`.
-3. `AddEmployeePhotoUrl` — adds nullable `Employees.PhotoUrl nvarchar(500)`. Purely additive; no data was touched or lost.
-
-4. `AddEmployeeProfileFields` (Day 9) — adds `Employees.Address nvarchar(500) NULL`, `Employees.Gender nvarchar(20) NULL` and `Employees.EmploymentType nvarchar(20) NOT NULL DEFAULT 'FullTime'`. Purely additive: existing employees keep all data and become `FullTime`. A verified copy-only backup (`SmartHRMSDB_before_Day9_20260927.bak` in the SQL Server default backup folder) was taken before applying it.
-
-5. `AddEmployeeProfileAndDocuments` (Day 10) — adds nullable `Employees` columns `BasicSalary decimal(18,2)`, `BloodGroup nvarchar(20)`, `EmergencyContactName nvarchar(150)`, `EmergencyContactPhone nvarchar(30)`, `EmergencyContactRelationship nvarchar(50)`, `PermanentAddress nvarchar(500)`, and creates `EmployeeDocuments` (FK to `Employees` with `NO ACTION`, index on `EmployeeId, IsActive`). Purely additive; a before/after checksum confirmed existing employee data was unchanged. Backup taken first: `SmartHRMSDB_before_Day10_20260927.bak`.
-
-6. `AddEmployeeProfileRecords` (Day 11) — creates `EmployeePersonalDetails`, `EmployeeAddresses`, `EmployeeEmergencyContacts`, `EmployeeEducations`, `EmployeeExperiences` (all FKs `NO ACTION`, indexes as in §6.8) and **drops** `Employees.Address`, `PermanentAddress`, `Gender`, `BloodGroup`, `EmergencyContactName`, `EmergencyContactPhone`, `EmergencyContactRelationship`. The drops were reviewed and approved: every existing row had those columns empty (verified immediately before applying), and a checksum of all remaining employee data was identical before and after. Backup taken first: `SmartHRMSDB_before_Day11_20260928.bak`.
-
-Day 7 and Day 8 required **no migration**: the `Departments`/`Designations` tables, their unique `Name` indexes and the `Employees` foreign keys already existed from `InitialCreate`, and the UTC converter does not change the schema. `dotnet ef migrations has-pending-model-changes` reports no changes.
-
----
-
-## 9. API Routes and Usage
-
-### Base URL
-```text
-http://localhost:5099
-https://localhost:7074
-```
-(Ports come from `Properties/launchSettings.json`; may vary by environment.)
-
-### Health check
-```text
-GET /api/health
-```
-```json
-{
-  "success": true,
-  "message": "Service is healthy.",
-  "data": { "status": "Healthy", "application": "smartHRMS", "version": "1.0.0" },
-  "errors": null
-}
-```
-
-### Standard response envelope
-
-Every endpoint returns the same shape (`ApiResponse<T>` in `SmartHRMS.Application/Common/Models`):
-
-```json
-{ "success": true,  "message": "...", "data": { }, "errors": null }
-{ "success": false, "message": "...", "data": null, "errors": ["..."] }
-```
-
-Controllers build it with `ApiResponse<T>.Ok(data, message)` / `ApiResponse.Ok(message)`; errors are produced centrally (see *Error responses*).
-
-### Employees
-
-| Method | Route                | Description                                   |
-|--------|-----------------------|------------------------------------------------|
-| GET    | `/api/employees`      | List all employees                             |
-| GET    | `/api/employees/{id}` | Get one employee by id (404 if not found)      |
-| GET    | `/api/employees/{id}/profile` | Full profile in one call: personal information, job information, addresses, emergency contacts, education, experience, photo and active documents — see §9c |
-| POST   | `/api/employees`      | Create an employee                             |
-| PUT    | `/api/employees/{id}` | Update an employee                             |
-| DELETE | `/api/employees/{id}` | Deactivate (soft delete) — sets `Status=Inactive`, no row is removed. Returns `200` with the envelope (no `data`) |
-| PUT    | `/api/employees/{id}/photo` | Upload or replace the employee's profile photo (`multipart/form-data`, field name `photo`) — see §9a |
-| DELETE | `/api/employees/{id}/photo` | Remove the employee's profile photo, if any. Does **not** delete the employee — see §9a |
-
-Required on create/update: `firstName`, `lastName`, `email` (valid), `dateOfBirth`, `joiningDate`, `departmentId`, `designationId` (an omitted/empty Guid or default date is rejected by `[NotDefault]`). `employeeCode` is required on create only and ignored on update.
-
-Input handling rules:
-- `employeeCode`, `email`, `firstName`, `lastName` are **trimmed** before the uniqueness checks and before saving, so `" EMP-001"` is treated as a duplicate of `"EMP-001"`.
-- `employeeCode` and `email` must be unique; the comparison is case-insensitive (SQL Server's default collation), so `emp-001` also conflicts with `EMP-001` (`409`).
-- `phone` is optional. An empty or whitespace value (e.g. `""` from a blank form field) is stored as `null`; any other value must be a valid phone number (`400`).
-- `departmentId`/`designationId` must exist and be **active** (`400`). The active check only applies to a new assignment — see §9b.
-- `employmentType` is optional: on create it defaults to `FullTime`; on update, omitting it keeps the current value.
-- `status` can only be set on update and is optional (omitting it keeps the current value). This is how an employee is **reactivated**: moving from `Inactive`/`Resigned`/`Terminated` back to `Active`/`OnLeave` counts as a fresh assignment, so the department and designation must be active (`400` otherwise). `DELETE /api/employees/{id}` remains the shortcut for `status = Inactive`.
-- Enum fields (`employmentType`, `status`, and the enums in the profile endpoints such as `gender`, `bloodGroup`, `addressType`) are sent and returned as **names** (`"PartTime"`, `"Female"`), case-insensitive on input. Numbers (`1`) and unknown names are rejected with `400` — `"The value for 'gender' is invalid."`.
-- The client never chooses the photo here — see §9a.
-- **Day 11:** `address`, `permanentAddress`, `gender`, `bloodGroup` and the `emergencyContact*` fields are no longer part of the employee JSON. They are managed through the profile endpoints in §9e (personal details, addresses, emergency contacts). If an older client still sends them, they are ignored (not stored).
-- `basicSalary` is optional and must be between `0` and `9999999999999999.99`. On `PUT`, omitting it **keeps** the current salary, so a client that doesn't know about it can't wipe it.
-- `dateOfBirth` must be in the past and `joiningDate` cannot be earlier than `dateOfBirth` (`400`).
-- `GET /api/employees` returns all employees regardless of status; use the `status` field to tell them apart (there is no filter parameter yet).
-
-`POST /api/employees` stays pure JSON — creating an employee never requires a photo. The photo is managed through the two dedicated sub-resource endpoints above instead of a `photoUrl` field on the create/update DTOs, so: (1) the common "create employee, upload photo later" flow needs no placeholder value, (2) `PUT /api/employees/{id}` (a JSON full-update) can never accidentally clear an existing photo by omission, and (3) Swagger can present a real file picker for the two endpoints that need one, instead of a JSON string field that would have to carry raw file bytes.
-
-#### Create — example request
-```bash
-curl -X POST http://localhost:5099/api/employees \
-  -H "Content-Type: application/json" \
-  -d '{
-    "employeeCode": "EMP-001",
-    "firstName": "Jane",
-    "lastName": "Doe",
-    "email": "jane.doe@example.com",
-    "phone": "123456",
-    "dateOfBirth": "1990-01-01",
-    "joiningDate": "2024-01-01",
-    "departmentId": "<department-guid>",
-    "designationId": "<designation-guid>",
-    "employmentType": "FullTime"
-  }'
-```
-
-#### Create — example response (`201 Created`)
-```json
-{
-  "success": true,
-  "message": "Employee created successfully.",
-  "data": {
-    "id": "c062424b-01c8-45af-b48a-d9d0311ea5bd",
-    "employeeCode": "EMP-001",
-    "firstName": "Jane",
-    "lastName": "Doe",
-    "fullName": "Jane Doe",
-    "email": "jane.doe@example.com",
-    "phone": "123456",
-    "dateOfBirth": "1990-01-01T00:00:00",
-    "joiningDate": "2024-01-01T00:00:00",
-    "departmentId": "...",
-    "departmentName": "Information Technology",
-    "designationId": "...",
-    "designationName": "Software Engineer",
-    "employmentType": "FullTime",
-    "basicSalary": null,
-    "status": "Active",
-    "isActive": true,
-    "photoUrl": null,
-    "createdAt": "2026-09-21T23:24:09.4852806Z",
-    "updatedAt": null
-  },
-  "errors": null
-}
-```
-
-### 9a. Employee profile photo
-
-**Storage architecture.** `Application` depends only on `IFileStorageService` (`SaveAsync`/`DeleteAsync` over a plain `Stream`) — it never references `IFormFile`, `wwwroot`, or any physical path, so `Employee`/`EmployeeService` stay framework-agnostic. `Infrastructure/Storage/LocalFileStorageService` is the only implementation today: it writes under the API's `wwwroot` (passed in from `Program.cs`, not read from config inside Infrastructure) and returns a relative URL like `/uploads/employees/{id:N}.jpg`. Swapping in S3/Blob/Cloudinary later means adding a new `IFileStorageService` implementation and changing one DI registration — no change to `Employee`, `EmployeeService`, or any DTO.
-
-`app.UseStaticFiles()` serves `wwwroot` as the site root, and `wwwroot` contains nothing but `uploads/` — so uploaded photos are reachable at a public URL without exposing source code, `appsettings.json`, or any other server file.
-
-**Safe filenames.** The client's original filename is never trusted or persisted — only its extension is read (after validation), and the stored file is always named `{employeeId:N}_{random}{extension}` (a new random part on every upload). This makes path traversal and filename collisions impossible; since the previous file is deleted after a successful replacement, each employee still has at most one photo file at a time.
-
-**Validation** (`EmployeePhotoPolicy`, enforced server-side in `EmployeeService.UploadPhotoAsync`, all failures return `400`):
-- File must be non-empty and ≤ 5 MB.
-- Extension must be one of `.jpg`, `.jpeg`, `.png`, `.webp`.
-- `Content-Type` header must be one of `image/jpeg`, `image/png`, `image/webp`.
-- The file's first bytes must match the real signature for that image format (JPEG/PNG/WEBP magic numbers) — catches a renamed/mislabeled non-image file even if the extension and `Content-Type` both lied.
-
-**Replace-safely sequencing.** On upload: the new file is saved first, then `Employees.PhotoUrl` is updated, and only after that succeeds is the previous file deleted — so a failed upload can never leave an employee with no photo, and a crash mid-request never orphans two files pointing at the same employee for long. `DELETE .../photo` is idempotent: calling it when there's no photo returns `200` and does nothing.
-
-Because every upload gets a new file name, every photo version has its own URL, so browsers never show a cached old photo after a replacement (before Day 10 a same-format replacement reused the URL).
-
-Photos can also be uploaded or removed for inactive employees.
-
-**Swagger.** `Microsoft.AspNetCore.OpenApi`'s document generator does not natively describe an MVC `IFormFile` parameter as a file upload (it reflects over `IFormFile`'s own properties and emits `application/x-www-form-urlencoded`, which breaks Swagger UI's "Try it out" file picker). `smartHRMS.Api/OpenApi/FormFileOperationTransformer.cs` (registered in `AddOpenApi(...)` in `Program.cs`) rewrites those operations to the correct `multipart/form-data` schema, so `PUT /api/employees/{id}/photo` renders a real file picker in `/swagger`.
-
-#### Upload/replace — example
-```bash
-curl -X PUT http://localhost:5099/api/employees/<id>/photo \
-  -F "photo=@profile.jpg;type=image/jpeg"
-```
-```json
-{
-  "success": true,
-  "message": "Employee photo uploaded successfully.",
-  "data": { "...": "...", "photoUrl": "/uploads/employees/<id-no-dashes>.jpg", "updatedAt": "..." },
-  "errors": null
-}
-```
-The photo itself is then reachable at `GET http://localhost:5099/uploads/employees/<id-no-dashes>.jpg`.
-
-#### Remove
-```bash
-curl -X DELETE http://localhost:5099/api/employees/<id>/photo
-```
-Returns the employee with `photoUrl: null`.
-
-### 9b. Departments & Designations
-
-Both resources have the same routes, rules and response shape (shown for departments; replace with `designations`).
-
-| Method | Route | Description |
-|--------|-------|-------------|
-| GET    | `/api/departments`      | List all departments (active and inactive), ordered by name, each with `employeeCount` |
-| GET    | `/api/departments/{id}` | Get one department (404 if not found) |
-| POST   | `/api/departments`      | Create — `201` + `Location` header. New departments are always active |
-| PUT    | `/api/departments/{id}` | Update `name`, `description`, `isActive` (all three are sent; `isActive` is required so omitting it can't deactivate by accident). Setting `isActive: true` reactivates |
-| DELETE | `/api/departments/{id}` | **Soft delete** — sets `IsActive=false`, never removes the row. Idempotent |
-
-**Rules**
-- `name`: required, not blank, max 100, trimmed, unique case-insensitively (`409` on duplicate). `description`: optional, max 500; blank becomes `null`.
-- **Delete safety:** DELETE (and PUT with `isActive: false`) returns `409` while any *current* employee — `Active` or `OnLeave` — is assigned. Employees who are `Inactive`/`Resigned`/`Terminated` don't block it; they keep the reference for history. Rows are never physically deleted, and the database also refuses one (`Restrict` FKs), so employee records can never be orphaned or cascade-deleted.
-- **Employee assignment:** on employee create/update, `departmentId`/`designationId` must exist (`400`) and must be active (`400`). The active check applies only to a *new* assignment — an employee already in a since-deactivated department can still have other details edited.
-- `employeeCount` counts all assigned employees regardless of status.
-
-```json
-{ "success": true, "message": "Department created successfully.",
-  "data": { "id": "…", "name": "Research", "description": "R&D team", "isActive": true,
-            "employeeCount": 0, "createdAt": "2026-09-27T07:49:54.69Z", "updatedAt": null },
-  "errors": null }
-```
-
-### 9c. Employee profile
-
-`GET /api/employees/{id}/profile` returns everything the profile page needs in one call (`404` for an unknown employee). It loads the employee and all profile records with split queries (one per collection), read-only.
-
-```json
-{ "success": true, "message": "Employee profile retrieved successfully.",
-  "data": {
-    "employeeId": "…", "employeeCode": "EMP-001", "fullName": "Jane Doe", "firstName": "Jane", "lastName": "Doe",
-    "photoUrl": "/uploads/employees/<id>_<random>.jpg", "isActive": true,
-    "personalInformation": {
-      "dateOfBirth": "1995-05-05T00:00:00", "phone": "+8801700000011", "email": "jane@example.com",
-      "hasPersonalDetails": true, "gender": "Female", "maritalStatus": "Married", "bloodGroup": "OPositive",
-      "nationality": "Bangladeshi", "nationalId": "*********0123", "passportNo": "******567" },
-    "jobInformation": {
-      "departmentId": "…", "departmentName": "Information Technology",
-      "designationId": "…", "designationName": "Software Engineer",
-      "joiningDate": "2026-02-01T00:00:00", "employmentType": "FullTime", "employmentStatus": "Active", "basicSalary": 50000 },
-    "addresses": [ { "addressType": "Present", "address": "House 12", "city": "Dhaka", "district": "Dhaka", "postalCode": "1207", "...": "..." },
-                   { "addressType": "Permanent", "address": "Village Rd", "city": "Cumilla", "district": "Cumilla", "...": "..." } ],
-    "emergencyContacts": [ { "name": "John Doe", "relationship": "Spouse", "phone": "+8801800000011", "email": null, "...": "..." } ],
-    "educations": [ { "degree": "BSc", "institution": "…", "major": "CSE", "result": "CGPA 3.80", "passingYear": 2017, "...": "..." } ],
-    "experiences": [ { "companyName": "…", "designation": "Developer", "startDate": "…", "endDate": null, "isCurrent": true, "...": "..." } ],
-    "documents": [ { "id": "…", "documentType": "Nid", "fileName": "nid.pdf", "uploadedAt": "…", "isActive": true,
-                     "downloadUrl": "/api/employees/<id>/documents/<docId>/download", "...": "..." } ],
-    "createdAt": "…", "updatedAt": "…" },
-  "errors": null }
-```
-
-- Every section is always present; with no records it is an empty list (`[]`), and `hasPersonalDetails` is `false` with the personal-detail fields `null` — so a UI can show empty states without extra calls.
-- **Sensitive values are masked here:** `nationalId` and `passportNo` show only their last 4 / 3 characters. The full values are returned only by `GET /api/employees/{id}/personal-details` (the edit source).
-- Order: addresses Present → Permanent; education by passing year (newest first); experience by start date (newest first); documents: **active** only, newest first.
-
-### 9d. Employee documents
-
-All routes are nested under the employee. A document is looked up by **both** the employee id and the document id, so employee A's document requested through employee B's route is `404` — ids can't be swapped to reach someone else's file.
-
-| Method | Route | Description |
-|--------|-------|-------------|
-| GET    | `/api/employees/{employeeId}/documents` | List documents, newest first. `?includeInactive=true` also returns deactivated ones |
-| GET    | `/api/employees/{employeeId}/documents/{documentId}` | Metadata of one document (active or deactivated) |
-| POST   | `/api/employees/{employeeId}/documents` | Upload (`multipart/form-data`: `file`, `documentType`, optional `description`) — `201` + `Location` |
-| GET    | `/api/employees/{employeeId}/documents/{documentId}/download` | Streams the file as an attachment with the server-validated `Content-Type` and `X-Content-Type-Options: nosniff`. Deactivated documents → `404` |
-| PUT    | `/api/employees/{employeeId}/documents/{documentId}` | JSON `{ "documentType": "...", "description": "..." }` — `documentType` optional (omitted = kept), `description` full update (omitted = cleared). Active documents only |
-| DELETE | `/api/employees/{employeeId}/documents/{documentId}` | **Soft delete** (`IsActive=false`). The row and the file are kept for HR history. Idempotent |
-
-**Document types:** `Nid`, `Passport`, `EducationalCertificate`, `Cv`, `JoiningLetter`, `ContractPaper`, `Other`, `ExperienceCertificate` (added Day 11) (case-insensitive on upload, so `NID` works; numbers are rejected). An invalid type returns `400` listing the allowed values.
-
-**Upload validation** (`EmployeeDocumentService` + `EmployeeDocumentPolicy`, all failures `400`, nothing is stored):
-- The employee must exist (`404`).
-- File present and non-empty; size ≤ `MaxFileSizeBytes`.
-- Extension in `AllowedExtensions` (configured, see below).
-- The file's first bytes must match the real format for that extension (`%PDF-`, JPEG, PNG, OLE for `.doc`, ZIP for `.docx`) — a renamed executable is rejected.
-- The stored name is `{random}{extension}` inside a folder named after the employee id; the client file name is only sanitized (directories, invalid characters removed) and kept as the download name.
-- If saving the metadata fails after the file was written, the file is deleted again.
-
-**Private storage.** Documents are written under `App_Data/employee-documents/` in the API's content root — **outside `wwwroot`**, so no static URL reaches them; the only way to read one is the download endpoint. The API refuses to start if `StoragePath` points inside `wwwroot`. `FilePath` (the storage key) is never included in responses.
-
-**Configuration** (`appsettings.json`):
-
-```json
-"EmployeeDocuments": {
-  "StoragePath": "App_Data/employee-documents",
-  "MaxFileSizeBytes": 10485760,
-  "AllowedExtensions": [ ".pdf", ".doc", ".docx", ".jpg", ".jpeg", ".png" ]
-}
-```
-
-`AllowedExtensions` can only choose from the formats the server knows how to verify (`.pdf`, `.doc`, `.docx`, `.jpg`, `.jpeg`, `.png`). Listing anything else (for example `.exe`) makes the API **fail at startup** with a clear message, so executables can never be allowed by a configuration mistake. Kestrel's default request limit (~28.6 MB) caps uploads at transport level, so keep `MaxFileSizeBytes` below that.
-
-### 9e. Employee profile records (Day 11)
-
-All routes are nested under the employee (`/api/employees/{employeeId}/...`). Every request first checks that the employee exists (`404`), and a record is only ever found through the employee it belongs to — using another employee's id in the route returns `404`, so ids can't be swapped to read or change someone else's data. `PUT` is a full update (omitted optional fields are cleared).
-
-| Resource | Routes | Rules |
+## 5. Database
+
+- **Database:** `SmartHRMSDB` on `MAHIM\SQLEXPRESS`, Windows (trusted) authentication; the connection string holds no
+  credentials. Read-committed snapshot isolation is enabled on the database.
+- **DbContext:** `SmartHRMSDbContext` (`smartHRMS.Infrastructure.Persistence`), registered with `UseSqlServer`.
+  Configurations are applied with `ApplyConfigurationsFromAssembly`.
+- **Tables:** `Departments`, `Designations`, `Employees`, `ApplicationUsers`, `EmployeeDocuments`,
+  `EmployeePersonalDetails`, `EmployeeAddresses`, `EmployeeEmergencyContacts`, `EmployeeEducations`,
+  `EmployeeExperiences` (+ `__EFMigrationsHistory`).
+- **Primary keys:** every table has a `uniqueidentifier` `Id` generated by the application.
+
+### Foreign keys (all `ON DELETE NO ACTION`)
+
+| Column | References |
+|---|---|
+| `Employees.DepartmentId` | `Departments.Id` |
+| `Employees.DesignationId` | `Designations.Id` |
+| `ApplicationUsers.EmployeeId` | `Employees.Id` |
+| `EmployeeDocuments.EmployeeId`, `EmployeePersonalDetails.EmployeeId`, `EmployeeAddresses.EmployeeId`, `EmployeeEmergencyContacts.EmployeeId`, `EmployeeEducations.EmployeeId`, `EmployeeExperiences.EmployeeId` | `Employees.Id` |
+
+Nothing cascades: the database refuses to delete a department, designation or employee that still has dependents.
+
+### Unique and other indexes
+
+| Table | Index |
+|---|---|
+| `Employees` | unique `EmployeeCode`, unique `Email`; `DepartmentId`, `DesignationId` |
+| `Departments`, `Designations` | unique `Name` |
+| `ApplicationUsers` | unique `Username`, unique `EmployeeId` |
+| `EmployeePersonalDetails` | unique `EmployeeId`; unique `NationalId` and unique `PassportNo` (both filtered `IS NOT NULL`) |
+| `EmployeeAddresses` | unique (`EmployeeId`, `AddressType`) |
+| `EmployeeDocuments` | (`EmployeeId`, `IsActive`) |
+| `EmployeeEmergencyContacts`, `EmployeeEducations`, `EmployeeExperiences` | `EmployeeId` |
+
+Uniqueness comparisons use SQL Server's default case-insensitive collation.
+
+### Soft delete
+
+| Record | "Delete" means | Flag |
 |---|---|---|
-| Personal details (0..1) | `GET` / `POST` / `PUT` / `DELETE` `/personal-details` | `POST` when one already exists → `409` (use `PUT`); `GET`/`PUT`/`DELETE` when none → `404`. `gender`, `maritalStatus`, `bloodGroup` are enum names. `nationalId`: 10, 13 or 17 digits (Bangladesh NID). `passportNo`: 6–20 letters/digits, stored upper-case. Both optional but **unique across employees** (`409`). `dateOfBirth` is returned read-only from the employee record |
-| Addresses | `GET` `/addresses`, `GET` `/addresses/{id}`, `POST`, `PUT /{id}`, `DELETE /{id}` | `addressType` (`Present`/`Permanent`), `address`, `city`, `district` required; `postalCode` optional (3–20 letters, digits, spaces or dashes). At most one address of each type → a second one (or changing a Permanent into a second Present) is `409` |
-| Emergency contacts | same pattern at `/emergency-contacts` | `name`, `relationship`, `phone` (valid phone) required; `email` optional (blank = none, must be valid), `address` optional. Any number per employee, but the same phone twice for one employee → `409` |
-| Education | same pattern at `/educations` | `degree` and `institution` required (free text, e.g. SSC/HSC/Bachelor/Master/Diploma), `major`/`result` optional, `passingYear` required: from the employee's birth year up to 5 years ahead (`400`). Exact duplicate (same degree + institution + year) → `409`. Listed newest first |
-| Experience | same pattern at `/experiences` | `companyName`, `designation`, `startDate` required. `startDate` after the date of birth and not in the future; `endDate` optional (`null` = current job, `isCurrent: true`), not before `startDate` and not in the future (`400`). Listed newest first |
-| Documents | existing Day 10 endpoints (§9d) | Day 11 added the `ExperienceCertificate` document type |
+| Employee | `Status = Inactive` | `Status` (no separate `IsActive` column) |
+| Department / Designation | deactivate | `IsActive = false` |
+| Employee document | deactivate; row and file kept for HR history | `IsActive = false` |
+| Profile records (personal details, addresses, contacts, education, experience) | permanent delete | none — hard delete |
 
-Example — add a present address:
+### Behavior built into the DbContext
 
-```bash
-curl -X POST http://localhost:5099/api/employees/<id>/addresses \
-  -H "Content-Type: application/json" \
-  -d '{ "addressType": "Present", "address": "House 12, Road 2", "city": "Dhaka", "district": "Dhaka", "postalCode": "1207" }'
-```
+- **Unique-index races → 409:** `SaveChangesAsync` converts SQL errors 2601/2627 into `ConflictException`. Verified in
+  the audit with 10 parallel identical creates: 1 × `201`, 9 × `409`, exactly one row stored.
+- **UTC timestamps:** a value converter marks `CreatedAt`/`UpdatedAt` as UTC when read, so they serialize with `Z`.
+  Date-only values (`DateOfBirth`, `JoiningDate`, document dates, ...) are left unzoned.
 
-### Error responses
-All errors use the standard envelope (`success: false`, `data: null`). Domain exceptions are mapped centrally by `AppExceptionHandler`; model-validation failures by `AddApiControllers()`; body-less 404/405/415 by `StatusCodeResponseWriter`. `message` is a short summary and `errors` carries the details.
+---
 
-| Scenario                              | Status | `message`               | `errors` |
-|----------------------------------------|--------|--------------------------|----------|
-| Employee not found (also a malformed id such as `/api/employees/abc`, which doesn't match the `{id:guid}` route) | 404 | `Resource not found.` | the not-found detail (`[]` for a malformed id) |
-| Duplicate `EmployeeCode` or `Email`    | 409    | `Conflict.`              | the conflict detail |
-| Duplicate lost in a simultaneous-request race (caught by the unique index) | 409 | `Conflict.` | `A record with the same unique value already exists.` |
-| Reactivating an employee (`status` → `Active`/`OnLeave`) whose department/designation is inactive | 400 | `Bad request.` | the detail |
-| Duplicate Department/Designation name | 409 | `Conflict.` | the conflict detail |
-| Deactivating a Department/Designation with active or on-leave employees | 409 | `Conflict.` | how many employees block it |
-| Non-existent `DepartmentId`/`DesignationId` | 400 | `Bad request.`        | the detail |
-| Assigning an inactive Department/Designation to an employee | 400 | `Bad request.` | the detail |
-| Department/Designation not found | 404 | `Resource not found.` | the not-found detail |
-| DTO validation failure (`[Required]`, `[EmailAddress]`, `[Phone]`, `[NotDefault]`, ...) | 400 | `One or more validation errors occurred.` | one entry per failed rule |
-| Invalid photo upload (missing/empty file, disallowed extension/type, signature mismatch, > 5 MB) | 400 | `Bad request.` | the specific reason |
-| Photo request body over the 6 MB `[RequestSizeLimit]` | 400 | `One or more validation errors occurred.` | the framework's "Request body too large" message |
-| Invalid document upload (missing/empty file, disallowed extension, content not matching the extension, too large, invalid `documentType`) | 400 | `Bad request.` | the specific reason (lists allowed types/values where relevant) |
-| Document not found, belongs to another employee, or deactivated (download/update) | 404 | `Resource not found.` | the detail |
-| Date of birth not in the past / joining date before date of birth | 400 | `Bad request.` | the detail |
-| Profile record rule broken (second Present/Permanent address, duplicate contact phone, duplicate education, NID/passport used by another employee, personal details already exist) | 409 | `Conflict.` | the detail |
-| Profile record date/year rule broken (passing year outside birth year…+5, experience start/end dates) | 400 | `Bad request.` | the detail |
-| Profile record not found, or belongs to another employee | 404 | `Resource not found.` | the detail |
-| Malformed JSON body | 400 | `One or more validation errors occurred.` | `The request body is not valid JSON.` |
-| Unreadable JSON value (unknown/numeric enum, wrong type) | 400 | `One or more validation errors occurred.` | `The value for '<field>' is invalid.` (internal .NET type names are never returned) |
-| Unknown route / wrong method / wrong content type | 404 / 405 / 415 | `Resource not found.` / `Method not allowed.` / `Unsupported media type.` | `[]` |
-| Unhandled exception                    | 500    | `An unexpected error occurred.` | `[]` (exception details are never sent to the client, only logged) |
-| Client disconnects mid-request         | 499    | (no body; logged at Debug, not as an error) | |
+## 6. Entity Documentation
 
-Example (`404`):
+### BaseEntity
+`Id` (`Guid`), `CreatedAt` (UTC, set on creation), `UpdatedAt` (UTC, nullable; set by services on every change).
+`EmployeeOwnedEntity` = `BaseEntity` + required `EmployeeId` (used by the Day 11 profile records).
+
+### Department / Designation
+| Field | Rule |
+|---|---|
+| `Name` | required, max 100, unique |
+| `Description` | optional, max 500 |
+| `IsActive` | default `true`; `false` = deactivated |
+| `Employees` | navigation |
+
+Designations are independent of departments (no department link).
+
+### Employee
+| Field | Rule |
+|---|---|
+| `EmployeeCode` | required, max 50, unique, cannot change after creation |
+| `FirstName`, `LastName` | required, max 100 |
+| `Email` | required, max 200, unique |
+| `Phone` | optional, max 30 |
+| `DateOfBirth` | required, in the past |
+| `JoiningDate` | required, not before `DateOfBirth` |
+| `DepartmentId`, `DesignationId` | required FKs |
+| `EmploymentType` | `FullTime` (default), `PartTime`, `Contract`, `Intern` — stored as string |
+| `BasicSalary` | optional `decimal(18,2)`, 0 or more |
+| `Status` | `Active` (default), `Inactive`, `Resigned`, `Terminated`, `OnLeave` — stored as string |
+| `PhotoUrl` | optional, max 500: relative URL `/uploads/employees/{id:N}_{random}.{ext}` |
+| navigations | `Department`, `Designation`, `ApplicationUser` (0..1), `PersonalDetails` (0..1), `Addresses`, `EmergencyContacts`, `Educations`, `Experiences`, `Documents` |
+
+`Status` is the single source of truth for activity; responses add a computed `isActive` (`Active` or `OnLeave`) and
+`fullName`.
+
+### ApplicationUser
+`EmployeeId` (unique FK), `Username` (max 100, unique), `PasswordHash`, `IsActive`. The table exists since
+`InitialCreate` but **no code uses it** — it is reserved for future authentication.
+
+### EmployeePersonalDetails (0..1 per employee)
+`Gender` (`Male`/`Female`/`Other`), `MaritalStatus` (`Single`/`Married`/`Divorced`/`Widowed`/`Separated`),
+`BloodGroup` (`APositive` … `ONegative`), `Nationality` (100), `NationalId` (17, unique when set),
+`PassportNo` (20, unique when set, stored upper-case). All optional. Date of birth is not duplicated here.
+
+### EmployeeAddress
+`AddressType` (`Present`/`Permanent`, at most one of each per employee), `Address` (500), `City` (100), `District`
+(100) required; `PostalCode` (20) optional.
+
+### EmployeeEmergencyContact
+`Name` (150), `Relationship` (50), `Phone` (30) required; `Email` (200), `Address` (500) optional.
+
+### EmployeeEducation
+`Degree` (100), `Institution` (200), `PassingYear` (int) required; `Major` (150), `Result` (50) optional.
+
+### EmployeeExperience
+`CompanyName` (200), `Designation` (150, free-text job title), `StartDate` required; `EndDate` optional (`null` =
+current job); `Responsibilities` (2000) optional.
+
+### EmployeeDocument
+| Field | Rule |
+|---|---|
+| `EmployeeId` | required FK |
+| `DocumentType` | enum stored as string (§15) |
+| `DocumentName` | required, max 200 (Day 12) |
+| `IssueDate`, `ExpiryDate` | optional calendar dates; expiry not before issue (Day 12) |
+| `FileName` | required, max 255: sanitized original name, used only as the download name |
+| `FilePath` | required, max 500: server-generated storage key `{employeeId:N}/{random}{ext}`; **never returned by the API** |
+| `ContentType` | required, max 100: set by the server from the validated extension |
+| `FileSizeBytes` | size in bytes |
+| `Description` | optional, max 500 |
+| `IsActive` | default `true`; `false` = deactivated (soft delete) |
+| `CreatedAt` | upload time (returned as `uploadedAt`) |
+
+---
+
+## 7. DTO Documentation
+
+All request DTOs are validated with Data Annotations before the service runs; enums travel as their **names**
+(case-insensitive on input; numbers rejected). Responses are always wrapped in `ApiResponse<T>` (§18).
+
+| DTO | Used by | Fields |
+|---|---|---|
+| `EmployeeDto` | employee responses | `id`, `employeeCode`, `firstName`, `lastName`, `fullName`, `email`, `phone`, `dateOfBirth`, `joiningDate`, `departmentId`, `departmentName`, `designationId`, `designationName`, `employmentType`, `basicSalary`, `status`, `isActive`, `photoUrl`, `createdAt`, `updatedAt` |
+| `CreateEmployeeDto` | `POST /api/employees` | `employeeCode`*, `firstName`*, `lastName`*, `email`*, `phone`, `dateOfBirth`*, `joiningDate`*, `departmentId`*, `designationId`*, `employmentType`, `basicSalary` |
+| `UpdateEmployeeDto` | `PUT /api/employees/{id}` | as create without `employeeCode`, plus `status`. Omitted `employmentType`/`basicSalary`/`status` keep their current value |
+| `UploadEmployeePhotoDto` | internal (controller → service) | `Content` (stream), `FileName`, `ContentType`, `Length` |
+| `EmployeeProfileDto` | `GET /api/employees/{id}/profile` | `employeeId`, `employeeCode`, `fullName`, `firstName`, `lastName`, `photoUrl`, `isActive`, `personalInformation`, `jobInformation`, `addresses`, `emergencyContacts`, `educations`, `experiences`, `documents` (active only), `createdAt`, `updatedAt` |
+| `EmployeePersonalInformationDto` | profile section | `dateOfBirth`, `phone`, `email`, `hasPersonalDetails`, `gender`, `maritalStatus`, `bloodGroup`, `nationality`, `nationalId` (masked), `passportNo` (masked) |
+| `EmployeeJobInformationDto` | profile section | `departmentId`, `departmentName`, `designationId`, `designationName`, `joiningDate`, `employmentType`, `employmentStatus`, `basicSalary` |
+| `DepartmentDto` / `DesignationDto` | responses | `id`, `name`, `description`, `isActive`, `employeeCount`, `createdAt`, `updatedAt` |
+| `CreateDepartmentDto` / `CreateDesignationDto` | POST | `name`* (max 100), `description` (max 500) |
+| `UpdateDepartmentDto` / `UpdateDesignationDto` | PUT | `name`*, `description`, `isActive`* (required so omitting it can't deactivate by accident) |
+| `EmployeePersonalDetailsDto` | personal-details responses | `id`, `employeeId`, `dateOfBirth` (read-only), `gender`, `maritalStatus`, `bloodGroup`, `nationality`, `nationalId`, `passportNo` (unmasked), `createdAt`, `updatedAt` |
+| `Create/UpdateEmployeePersonalDetailsDto` | POST/PUT (full replace) | `gender`, `maritalStatus`, `bloodGroup`, `nationality` (100), `nationalId` (10/13/17 digits), `passportNo` (6–20 letters/digits) |
+| `EmployeeAddressDto` + `Create/UpdateEmployeeAddressDto` | addresses | `addressType`*, `address`* (500), `city`* (100), `district`* (100), `postalCode` (3–20 letters/digits/spaces/dashes) |
+| `EmployeeEmergencyContactDto` + create/update | contacts | `name`* (150), `relationship`* (50), `phone`* ([Phone], 30), `email` ([EmailAddress], blank = none), `address` (500) |
+| `EmployeeEducationDto` + create/update | education | `degree`* (100), `institution`* (200), `major` (150), `result` (50), `passingYear`* (1900–2200, plus service rule) |
+| `EmployeeExperienceDto` + create/update | experience | `companyName`* (200), `designation`* (150), `startDate`*, `endDate`, `responsibilities` (2000); response adds `isCurrent` |
+| `EmployeeDocumentDto` | document responses | `id`, `employeeId`, `documentType`, `documentName`, `issueDate`, `expiryDate`, `fileName`, `contentType`, `fileSizeBytes`, `description`, `isActive`, `uploadedAt`, `updatedAt`, `downloadUrl` (never a storage path) |
+| `UploadEmployeeDocumentDto` | internal (controller → service) | `Content`, `FileName`, `ContentType`, `Length`, `DocumentType`, `DocumentName`, `IssueDate`, `ExpiryDate`, `Description` |
+| `UpdateEmployeeDocumentDto` | `PUT .../documents/{id}` | `documentType`, `documentName` (omitted = kept), `issueDate`, `expiryDate`, `description` (omitted = cleared) |
+| `EmployeeDocumentFileDto` | internal (download) | `Content`, `FileName`, `ContentType` |
+
+`*` = required. Update DTOs of profile records inherit their create DTO and replace every field.
+
+---
+
+## 8. Service Layer
+
+All services are registered **scoped** in `AddApplication`.
+
+| Service | Responsibilities |
+|---|---|
+| `EmployeeService` | `GetAllAsync`, `GetByIdAsync`, `CreateAsync`, `UpdateAsync`, `DeactivateAsync`, `UploadPhotoAsync`, `RemovePhotoAsync`. Trims input, enforces unique code/email, date rules, department/designation existence and active state, reactivation rules, photo validation and replace sequencing |
+| `EmployeeProfileService` | `GetProfileAsync`: builds the profile from one split query; masks NID (last 4) and passport (last 3); orders addresses Present→Permanent, education and experience newest first, active documents newest first |
+| `DepartmentService`, `DesignationService` | `GetAllAsync` (with employee counts), `GetByIdAsync`, `CreateAsync`, `UpdateAsync`, `DeactivateAsync`. Unique names; deactivation refused (409) while `Active`/`OnLeave` employees are assigned |
+| `EmployeePersonalDetailsService` | `GetAsync`, `CreateAsync` (409 if present), `UpdateAsync`, `DeleteAsync`; NID/passport uniqueness |
+| `EmployeeOwnedRecordService<TEntity, TSaveDto, TDto>` (base) → `EmployeeAddressService`, `EmployeeEmergencyContactService`, `EmployeeEducationService`, `EmployeeExperienceService` | `GetAllAsync`, `GetByIdAsync`, `CreateAsync`, `UpdateAsync`, `DeleteAsync`. Every call first checks the employee exists and looks records up by employee **and** record id. Subclasses add their rules (one address per type, unique contact phone, passing-year range and duplicate check, experience date rules) |
+| `EmployeeDocumentService` | `UploadAsync`, `GetByEmployeeAsync(includeInactive)`, `GetByIdAsync`, `DownloadAsync`, `UpdateAsync`, `DeactivateAsync` (§15) |
+
+Helpers: `EmployeePhotoPolicy` (photo types/size), `EmployeeDocumentPolicy` (verifiable document formats, content
+types, startup validation), `EmployeeStatusRules` (`Active` and `OnLeave` count as current), `FileSignature`,
+`InputText`.
+
+---
+
+## 9. Repository Layer
+
+Interfaces live in `SmartHRMS.Application/Interfaces`, implementations in `SmartHRMS.Infrastructure/Repositories`,
+all registered **scoped**. Every method is async and takes a `CancellationToken`. Read-only list queries use
+`AsNoTracking`.
+
+| Repository | Methods |
+|---|---|
+| `EmployeeRepository` | `GetByIdAsync` (with department/designation), `GetAllAsync` (ordered by employee code), `GetProfileAsync` (split query with every profile collection, active documents only), `ExistsAsync`, `EmployeeCodeExistsAsync`, `EmailExistsAsync`, `AddAsync`, `SaveChangesAsync` |
+| `DepartmentRepository` / `DesignationRepository` | `GetByIdAsync`, `GetAllAsync` (ordered by name), `NameExistsAsync`, `CountEmployeesAsync(statuses)`, `GetEmployeeCountsAsync`, `AddAsync`, `SaveChangesAsync` |
+| `EmployeeDocumentRepository` | `GetByIdAsync(employeeId, documentId)`, `GetByEmployeeIdAsync(employeeId, includeInactive)` (newest first), `AddAsync`, `SaveChangesAsync` |
+| `EmployeeOwnedRepository<T>` (generic) | `GetByIdAsync(employeeId, id)`, `GetByEmployeeIdAsync`, `AnyAsync`, `AddAsync`, `Remove`, `SaveChangesAsync` |
+
+Storage services (registered **singleton**): `LocalFileStorageService` (`SaveAsync`, `DeleteAsync`) under `wwwroot`,
+and `LocalDocumentStorageService` (`SaveAsync`, `OpenReadAsync`, `DeleteAsync`) under `App_Data/employee-documents`.
+Both resolve every path through `SafeStoragePath`, which drops `..`, drive letters and separators and refuses any path
+outside its root.
+
+---
+
+## 10. Controllers
+
+Controllers are thin: bind the request, call one service method, return `ApiResponse<T>`. All routes use the
+`{id:guid}` constraint, so a malformed id is a `404`. **Authorization: none on any endpoint** (§17).
+
+| Controller | Base route | Endpoints |
+|---|---|---|
+| `HealthController` | `/api/health` | `GET` |
+| `EmployeesController` | `/api/employees` | `GET`, `GET {id}`, `GET {id}/profile`, `POST`, `PUT {id}`, `DELETE {id}`, `PUT {id}/photo`, `DELETE {id}/photo` |
+| `DepartmentsController` | `/api/departments` | `GET`, `GET {id}`, `POST`, `PUT {id}`, `DELETE {id}` |
+| `DesignationsController` | `/api/designations` | `GET`, `GET {id}`, `POST`, `PUT {id}`, `DELETE {id}` |
+| `EmployeePersonalDetailsController` | `/api/employees/{employeeId}/personal-details` | `GET`, `POST`, `PUT`, `DELETE` |
+| `EmployeeAddressesController` | `/api/employees/{employeeId}/addresses` | `GET`, `GET {id}`, `POST`, `PUT {id}`, `DELETE {id}` |
+| `EmployeeEmergencyContactsController` | `/api/employees/{employeeId}/emergency-contacts` | same as addresses |
+| `EmployeeEducationsController` | `/api/employees/{employeeId}/educations` | same as addresses |
+| `EmployeeExperiencesController` | `/api/employees/{employeeId}/experiences` | same as addresses |
+| `EmployeeDocumentsController` | `/api/employees/{employeeId}/documents` | `GET`, `GET {documentId}`, `POST`, `GET {documentId}/download`, `PUT {documentId}`, `DELETE {documentId}` |
+
+The OpenAPI document lists **21 distinct route templates with no duplicates** (checked in the audit). Every endpoint
+with its request, response and status codes is in §21.
+
+---
+
+## 11. Employee Management
+
+- **Create** (`POST /api/employees`, `201` + `Location`): JSON only (the photo is uploaded separately). Code, email and
+  names are trimmed before the uniqueness checks. Code and email must be unique (`409`, case-insensitive). Department
+  and designation must exist and be active (`400`). Date of birth must be in the past; joining date not before it
+  (`400`). `employmentType` defaults to `FullTime`; new employees are `Active`.
+- **Read:** `GET /api/employees` returns every employee (any status), **ordered by employee code**, with department and
+  designation names. There is no server-side search, filter or paging. `GET /api/employees/{id}` returns one (`404`).
+- **Update** (`PUT /api/employees/{id}`): full update of the editable fields; the code can't change. Omitted
+  `employmentType`, `basicSalary` and `status` keep their values. A department/designation that has since been
+  deactivated may be kept, but not newly assigned. Setting `Active`/`OnLeave` on a former employee is a
+  **reactivation**, which requires an active department and designation.
+- **Deactivate** (`DELETE /api/employees/{id}`): sets `Status = Inactive`; the row and all related records stay.
+- **Details:** `GET /api/employees/{id}/profile` (§11a).
+- **Photo:** §14.
+- Since Day 11, `address`, `permanentAddress`, `gender`, `bloodGroup` and `emergencyContact*` are not part of the
+  employee JSON; if sent they are ignored (use the profile endpoints).
+
+### 11a. Employee details / profile
+
+`GET /api/employees/{id}/profile` returns every section in one call (`404` for an unknown or malformed id):
+personal information, job information, addresses, emergency contacts, education, experience and **active** documents.
+Every section is always present (`[]` when empty; `hasPersonalDetails: false` with `null` fields when no personal
+details exist). NID and passport numbers are **masked** here; the full values come only from
+`GET .../personal-details`. No internal fields (storage paths, `ApplicationUser`, password hash) are exposed.
+
+### 11b. Profile records (Day 11)
+
+| Resource | Rules |
+|---|---|
+| Personal details (0..1) | `POST` when present → `409`; `GET`/`PUT`/`DELETE` when absent → `404`. NID 10/13/17 digits and passport 6–20 letters/digits, each unique across employees (`409`) |
+| Addresses | one `Present` and one `Permanent` at most (`409`) |
+| Emergency contacts | any number; the same phone twice for one employee → `409` |
+| Education | `passingYear` from the employee's birth year to current year + 5 (`400`); exact duplicate → `409`; newest first |
+| Experience | `startDate` after date of birth and not in the future; `endDate` optional, not before `startDate`, not in the future (`400`); newest first |
+
+A record requested through another employee's route is `404`. `PUT` replaces every field.
+
+---
+
+## 12. Department Management
+
+- **Create** `POST /api/departments` → `201`; name required (max 100), trimmed, unique case-insensitively (`409`);
+  description optional (max 500, blank → `null`). New departments are active.
+- **Read** `GET /api/departments` (all, active and inactive, ordered by name, each with `employeeCount` = all assigned
+  employees) and `GET /api/departments/{id}` (`404`).
+- **Update** `PUT /api/departments/{id}`: `name`, `description`, `isActive` (required). `isActive: true` reactivates.
+- **Deactivate** `DELETE /api/departments/{id}` (or `PUT` with `isActive: false`): soft delete, idempotent. Refused
+  with `409` while any `Active`/`OnLeave` employee is assigned. Rows are never physically deleted.
+- An inactive department can't be assigned to employees (`400`).
+
+## 13. Designation Management
+
+Identical rules and routes to departments, at `/api/designations`. Designations are not linked to departments.
+
+---
+
+## 14. Employee Photo
+
+| Aspect | Implementation |
+|---|---|
+| Upload / replace | `PUT /api/employees/{id}/photo`, `multipart/form-data`, field `photo`; returns the updated employee |
+| Remove | `DELETE /api/employees/{id}/photo`; idempotent (no photo → `200`) |
+| Validation (`400`) | file present and non-empty; ≤ 5 MB; extension `.jpg`, `.jpeg`, `.png`, `.webp`; `Content-Type` `image/jpeg`, `image/png` or `image/webp`; first bytes must match the image format. Requests over the 6 MB `[RequestSizeLimit]` are also `400` |
+| Storage | `wwwroot/uploads/employees/{employeeId:N}_{random}{ext}`; the client file name is never used (only its extension, after validation) |
+| Database | `Employees.PhotoUrl` stores the relative URL only |
+| Access | served as a static file at the `photoUrl` path (e.g. `http://localhost:5099/uploads/employees/...`) |
+| Replacement | new file saved → `PhotoUrl` updated and saved → old file deleted. Each version has its own URL (no stale browser cache) |
+| Security | path traversal impossible (generated names + `SafeStoragePath`); `wwwroot` holds nothing but `uploads/` |
+| Not protected | anyone who can reach the API can upload/remove photos (no authentication) |
+
+Verified in the audit on both the database and the file system: the stored `PhotoUrl` equals the response, the file
+is byte-identical to the upload, the old file disappears on replace, and remove deletes the file and clears the column.
+
+---
+
+## 15. Employee Document Management
+
+All routes are nested under the employee. A document is always looked up by **employee id and document id
+together**, so another employee's document through the wrong route is `404`. (Day 12's spec suggested flat
+`/api/employee-documents/{id}` routes; the nested convention was kept because it is what enforces this isolation.)
+
+| Operation | Endpoint | Behavior |
+|---|---|---|
+| Upload | `POST /api/employees/{employeeId}/documents` | `multipart/form-data`: `file`, `documentType`, `documentName`, optional `issueDate`, `expiryDate` (yyyy-MM-dd), `description` → `201` + `Location` |
+| List | `GET .../documents` | active documents, newest first; `?includeInactive=true` adds deactivated ones ("show deactivated") |
+| Single | `GET .../documents/{documentId}` | metadata of an active **or deactivated** document (HR history) |
+| Download | `GET .../documents/{documentId}/download` | streams the file as `attachment` with the original (sanitized) file name, the server-validated `Content-Type` and `X-Content-Type-Options: nosniff`. Deactivated document or missing physical file → `404` |
+| Update metadata | `PUT .../documents/{documentId}` | JSON; the file is never changed or re-uploaded. `documentType`/`documentName` omitted = kept (a sent name can't be blank); `issueDate`, `expiryDate`, `description` omitted = cleared. Deactivated documents → `404` |
+| Delete | `DELETE .../documents/{documentId}` | **SOFT DELETE / DEACTIVATION**: sets `IsActive = false`. The database row **and the physical file are kept** for HR history; the document disappears from the normal list and can no longer be downloaded or edited. Idempotent. There is no permanent-delete endpoint |
+
+**Document types:** `Nid`, `Passport`, `BirthCertificate`, `EducationalCertificate`, `ExperienceCertificate`,
+`JoiningLetter`, `Cv` (Resume/CV), `TinCertificate`, `ContractPaper`, `Other`. Case-insensitive names; numbers and
+unknown names → `400` listing the allowed values.
+
+**Allowed files:** `.pdf`, `.doc`, `.docx`, `.jpg`, `.jpeg`, `.png`, maximum **10 MB** (`EmployeeDocuments` section in
+`appsettings.json`). Configuration can only choose from formats the server can verify by signature; anything else (e.g.
+`.exe`) makes the API fail at startup.
+
+**Upload validation** (all `400`, nothing stored): employee exists (`404`); `documentName` required, trimmed, max 200;
+`description` max 500; expiry not before issue; unparsable date; file present and non-empty; size ≤ 10 MB; extension
+allowed; client `Content-Type` must match the extension (missing or `application/octet-stream` accepted); first bytes
+must match the real format (`%PDF-`, JPEG, PNG, OLE for `.doc`, ZIP for `.docx`).
+
+**Storage strategy:** `App_Data/employee-documents/{employeeId:N}/{random}{ext}` in the API's content root — outside
+`wwwroot`, so no URL serves it directly; the download endpoint is the only way in. The file is written first, then the
+row; if saving the row fails, the file is deleted again (no orphan files). The storage key is never returned.
+
+---
+
+## 16. Validation Rules
+
+| Area | Rules | Where |
+|---|---|---|
+| Required fields | `[Required]` / `[NotDefault]` (empty `Guid`, default date) | DTOs |
+| String lengths | `[MaxLength]` matching the column sizes above | DTOs + EF configuration |
+| Email | `[EmailAddress]` | employee, emergency contact |
+| Phone | `[Phone]`; blank employee phone stored as `null` | employee, emergency contact |
+| Numbers | `basicSalary` 0 … 9999999999999999.99; `passingYear` 1900–2200 + birth-year rule | DTOs + service |
+| Dates | invalid JSON/form dates → `400`; employee DOB past, joining ≥ DOB; experience and education rules; document expiry ≥ issue | services |
+| Enums | names only, case-insensitive; numbers/unknown → `400` | JSON options |
+| Foreign keys | department/designation must exist and be active for new assignments | `EmployeeService` |
+| Duplicates | employee code/email, department/designation names, NID/passport, address type, contact phone, education → `409` | services + unique indexes |
+| Files | photo and document rules in §14/§15 | policies + services |
+| IDs | route `{id:guid}` constraint: malformed id → `404`; unknown id → `404` | routing + services |
+| Malformed body | invalid JSON → `400` "The request body is not valid JSON." or "The value for '<field>' is invalid." | `AddApiControllers` |
+
+Validation always happens on the server; the frontend repeats the rules only for faster feedback.
+
+---
+
+## 17. Authentication & Authorization
+
+**Not implemented.** No authentication scheme, no login endpoint, no tokens, no roles or policies.
+`app.UseAuthorization()` is in the pipeline but has nothing to enforce, so **every endpoint is anonymous**, including
+salaries, identity numbers and HR documents. `ApplicationUser` exists in the database but is unused. Consequently no
+endpoint returns `401` or `403` (the envelope writer has messages for them, ready for when auth is added).
+
+**CORS** is the only access restriction, and it applies to browsers only: `Cors:AllowedOrigins` in
+`appsettings.Development.json` lists `http://localhost:5173` and `http://localhost:4173`; `appsettings.json` lists none.
+
+Do not expose this API beyond a local development machine until authentication exists.
+
+---
+
+## 18. Error Handling
+
+Every response uses the envelope (`ApiResponse<T>`):
+
 ```json
-{ "success": false, "message": "Resource not found.", "data": null,
-  "errors": ["Employee with id '...' was not found."] }
+{ "success": true,  "message": "…", "data": { }, "errors": null }
+{ "success": false, "message": "…", "data": null, "errors": ["…"] }
 ```
 
+| Source | Status | `message` | `errors` |
+|---|---|---|---|
+| Model validation (`[Required]`, lengths, formats, invalid JSON/values) | 400 | `One or more validation errors occurred.` | one entry per problem |
+| `BadRequestException` (business rules, file validation) | 400 | `Bad request.` | the specific reason |
+| `NotFoundException` | 404 | `Resource not found.` | the detail |
+| `ConflictException` (duplicates, delete protection, unique-index race) | 409 | `Conflict.` | the detail |
+| Unknown route / malformed id / wrong method / wrong content type | 404 / 405 / 415 | `Resource not found.` / `Method not allowed.` / `Unsupported media type.` | `[]` |
+| Any other exception | 500 | `An unexpected error occurred.` | `[]` — logged, never sent to the client |
+| Client disconnected mid-request (any exception type) | 499 | no body; logged at Debug, not as an error (audit fix) | |
+
+Success codes: `200` (reads, updates, deletes, photo operations), `201` + `Location` (creates and uploads). The API
+does not use `204`.
+
+Known log behavior: when two identical creates race, EF Core logs the refused insert at error level
+(`Microsoft.EntityFrameworkCore.Update[10000]`) before it is converted to `409`; the client never sees a `500`.
+
 ---
 
-## 10. Running the Backend
+## 19. File Storage
+
+| Kind | Location | Public? | Naming |
+|---|---|---|---|
+| Employee photos | `smartHRMS.Api/wwwroot/uploads/employees/` | yes — static files under `/uploads/...` | `{employeeId:N}_{random}.{ext}` |
+| Employee documents | `smartHRMS.Api/App_Data/employee-documents/{employeeId:N}/` (configurable `EmployeeDocuments:StoragePath`) | **no** — only via the download endpoint | `{random}.{ext}` |
+
+Both folders are gitignored. Photos of replaced/removed versions are deleted; documents are never deleted (soft
+delete). Paths are always resolved through `SafeStoragePath`; client file names never decide where a file is written.
+
+---
+
+## 20. Migration & Database Setup
+
+Run from `backend/`:
 
 ```bash
-cd backend
-dotnet restore
-dotnet build smartHRMS.slnx
-dotnet ef database update --project SmartHRMS.Infrastructure --startup-project smartHRMS.Api
-cd smartHRMS.Api
-dotnet run
-```
-
-Swagger UI: `http://localhost:5099/swagger` (Development only).
-
-> **Stop the running API before building.** While `dotnet run` is active, its process locks the DLLs in `smartHRMS.Api/bin`, so a second `dotnet build` fails with `MSB3027`/`MSB3021` ("The file is locked by: smartHRMS.Api"). This is not a code error — stop the API (Ctrl+C), then build. Likewise, a running instance keeps serving the code it was started with; restart it after pulling or changing code.
-
-### Running tests
-```bash
-cd backend
-dotnet test smartHRMS.slnx
-```
-
----
-
-## 11. Current Backend State (Day 1–11 complete)
-
-- Solution builds cleanly (`dotnet build` → 0 warnings, 0 errors, with no API instance running — see §10).
-- Database schema created and migrated on the local SQL Server instance; all 6 migrations applied, no pending model changes.
-- Domain layer complete: `BaseEntity`, `Department`, `Designation`, `Employee`, `ApplicationUser`, `EmployeeStatus`.
-- Application/Infrastructure/API layers wired end-to-end for Employees, Departments and Designations. The Day 1–8 audit verified every endpoint live against the database (valid and invalid cases, photo upload/replace/remove, delete protection, the end-to-end Department → Designation → Employee workflow), with no regressions to earlier days. Day 9 was verified the same way (profile fields, employment type, status changes and reactivation, enum validation) plus a Day 1–8 regression pass. Day 10 was verified live too (all personal/job fields, profile endpoint, document upload/list/download/update/soft delete, cross-employee access, invalid/oversized/renamed files, private storage not publicly reachable, startup config validation) with a Day 1–9 regression pass.
-- Centralized exception handling in place; no stack traces or secrets leak to API responses.
-- Standard `ApiResponse<T>` envelope on every endpoint, including errors, validation failures and body-less 404/405/415.
-- Swagger UI available at `/swagger` (Development); success and error responses are documented with `[ProducesResponseType]` on the Employees/Departments/Designations endpoints (not on `/api/health`), including a working file picker for the photo upload endpoint.
-- Employee profile photo support: `PhotoUrl` on `Employee`, local disk storage behind `IFileStorageService`, upload/replace/remove endpoints, server-side validation (type/size/signature), and static-file serving scoped to `wwwroot/uploads` only.
-- `.gitignore` added; `.vs/`, `bin/`, `obj/` no longer tracked in git; uploaded photos under `wwwroot/uploads/` are gitignored too (folder kept via `.gitkeep`).
-- Department & Designation management (Day 8): full CRUD with soft-delete deactivation, duplicate-name protection, delete safety, and active-status checks when assigning employees (see §9b).
-- Employee profile & document management (Day 10): see §9c/§9d.
-- Complete employee profile (Day 11): personal details, addresses, emergency contacts, education, experience — see §6.8 and §9e. Verified live with 167 checks plus a 192-check Day 1–10 regression run.
-- 150 unit tests passing (Employee, Profile, Profile records, Document, Department, Designation services, DTO validation, `ApiResponse`, photo upload/removal) using in-memory fake repositories.
-
-### Known issues (from the Day 1–8 audit)
-
-| Severity | Issue | Impact |
-|----------|-------|--------|
-| High | No authentication/authorization | Every endpoint is callable anonymously, including salary data, profile, and **employee documents (NID, passport, ...)**. Document ownership is enforced (a document is only reachable through its own employee), but there is no user/role check yet. Must be addressed before any shared or deployed use |
-| Low | Photo over 6 MB returns the framework's message | `400` under "One or more validation errors occurred." rather than a `413` or the photo-specific message |
-| Low | Department and Designation code is duplicated | The two features are parallel copies (service, repository, controller), including the deactivation rule |
-| Low | Redundant EF Core package references in `smartHRMS.Api.csproj` | `Microsoft.EntityFrameworkCore.SqlServer`/`.Tools` already come through Infrastructure (`.Design` is still needed for `dotnet ef`) |
-| Low | Tests are unit-level only | EF queries and the HTTP pipeline have no automated integration tests |
-| Low | Photo upload limits are constants | `EmployeePhotoPolicy` (5 MB, jpg/png/webp) is not configurable like the document rules |
-| Low | `BasicSalary` is returned by the list endpoint | Salary is sensitive; once auth exists, restrict it (e.g. HR role only) |
-| Low | No frontend | Day 10 profile/form UI (phases 11–12) is not implemented because the repository has no frontend yet |
-| Low | Removed employee JSON fields are ignored silently | Since Day 11, `address`, `permanentAddress`, `gender`, `bloodGroup` and `emergencyContact*` sent to `POST/PUT /api/employees` are ignored (not stored, no error). Use the profile endpoints (§9e) |
-
-**Resolved in Day 9:** employee reactivation (via `status` on `PUT`), duplicate race → `500` (now `409`, see §5), `.http` file now covers Departments/Designations, JSON error messages no longer expose .NET type names.
-
-**Resolved in Day 10:** same-format photo replacement now gets a new URL (no stale browser cache).
-
-**Resolved in the Day 1–10 audit:** solution/project reference paths now match the folder casing (previously 3 build errors on a case-sensitive file system, now 0); `smartHRMS.Api.csproj.user` is no longer tracked in git (it stays local and is covered by `*.user` in `.gitignore`).
-
-### Not yet implemented
-- Authentication/authorization (JWT, roles/permissions) — only `ApplicationUser` (with `PasswordHash`) exists; there is no `Role`/`Permission` entity and no auth DTOs yet
-- Attendance, Leave, Payroll, Recruitment, Performance modules
-- Frontend/dashboard UI
-- Cloud object storage (S3/Blob/Cloudinary) for photos — local disk only today, but `IFileStorageService` was designed so this is a new Infrastructure implementation, not a redesign
-
----
-
-## 12. Recommended Next Steps (Day 12+)
-
-1. Commit the Day 10–11 work and the Day 1–10 audit fixes before starting new features.
-2. **Authentication (highest priority now that the API holds identity documents and salaries):** JWT issuance tied to `ApplicationUser`, password hashing (e.g. `Microsoft.AspNetCore.Identity` password hasher).
-3. Role-based authorization: e.g. HR can manage all employees/documents/salaries; an employee can read only their own profile and documents.
-4. Employee list filtering/paging (by status, department, designation) as the data grows.
-5. ~~CORS configuration once a frontend is introduced.~~ Done: config-driven `Frontend` policy (see §CORS); the React frontend covers Day 1–11 including the profile pages. Add the production frontend origin to `Cors:AllowedOrigins` when deploying.
-6. Integration tests against a real/in-memory database for the API layer (current tests are unit-level against fake repositories).
-7. `AppExceptionHandler` logs requests cancelled by the client (`SqlException: Operation cancelled by user`) as unhandled errors and tries to write a 500. The frontend aborts in-flight requests when a page unmounts, so this is log noise only; checking `httpContext.RequestAborted.IsCancellationRequested` and returning quietly would silence it.
-
----
-
-## 13. Security Considerations
-
-Current state:
-- **There is no authentication or authorization yet — all endpoints are anonymous.** `app.UseAuthorization()` is in the pipeline but no scheme or policy is configured, so it has no effect. Do not expose this API outside a local development machine until auth is implemented.
-- Connection string uses Windows/Trusted authentication — no stored credentials.
-- `ApplicationUser.PasswordHash` — no plain-text passwords anywhere in the model.
-- Centralized exception handling prevents stack traces/internal details from reaching API responses.
-- No secrets or connection strings with credentials are committed to git.
-- Photo uploads: extension + `Content-Type` + magic-byte signature are all checked server-side (never trusting the client alone), size is capped at 5 MB (with a 6 MB `[RequestSizeLimit]` on the action as a transport-level backstop), stored filenames are always server-generated from the employee id (the original filename is only ever read for its extension, never used for storage or trusted for path construction), and `wwwroot` — the only folder served as static content — contains nothing but the `uploads/` directory, so no source, config, or other server file is reachable through it.
-- Employee documents: stored outside `wwwroot` (no static URL), only streamed through the download endpoint with the server-validated `Content-Type`, `Content-Disposition: attachment` and `X-Content-Type-Options: nosniff`; allowed types are a configurable subset of formats the server can verify by signature (executables can never be enabled); server-generated storage names; every resolved path is checked to stay inside its storage root (`SafeStoragePath`); a document is only reachable through its own employee id; uploaded files are never executed.
-
-Recommended for future days:
-- JWT authentication + refresh tokens
-- Role-based authorization policies
-- Rate limiting
-- Antivirus/malware scanning of uploaded photos and documents before they are served, if this ever runs somewhere untrusted users can reach
-
----
-
-## 14. Useful Commands
-
-```bash
-dotnet restore
-dotnet build smartHRMS.slnx
-dotnet test smartHRMS.slnx
 dotnet ef migrations add <Name> --project SmartHRMS.Infrastructure --startup-project smartHRMS.Api
 dotnet ef database update --project SmartHRMS.Infrastructure --startup-project smartHRMS.Api
+dotnet ef migrations has-pending-model-changes --project SmartHRMS.Infrastructure --startup-project smartHRMS.Api
 dotnet ef migrations remove --project SmartHRMS.Infrastructure --startup-project smartHRMS.Api
 ```
 
+Applied migrations (all 7 applied; no pending model changes):
+
+| # | Migration | Change |
+|---|---|---|
+| 1 | `InitialCreate` | Departments, Designations, Employees, ApplicationUsers, indexes, FKs |
+| 2 | `UpdateEmployeeStatusToEnum` | `Employees.Status` as `nvarchar(20)`; redundant `IsActive` dropped |
+| 3 | `AddEmployeePhotoUrl` | `Employees.PhotoUrl` |
+| 4 | `AddEmployeeProfileFields` (Day 9) | `Address`, `Gender`, `EmploymentType` (default `FullTime`) |
+| 5 | `AddEmployeeProfileAndDocuments` (Day 10) | salary, blood group, permanent address, emergency contact columns; `EmployeeDocuments` table |
+| 6 | `AddEmployeeProfileRecords` (Day 11) | five profile tables; drops the flat address/gender/blood-group/emergency-contact columns (all empty when applied) |
+| 7 | `AddEmployeeDocumentDetails` (Day 12) | `DocumentName` (backfilled from `FileName`), `IssueDate`, `ExpiryDate` |
+
+Before each schema change since Day 9 a verified copy-only backup was taken
+(`SmartHRMSDB_before_Day9/10/11/12_*.bak` in the SQL Server backup folder). Migrations are only generated after a
+domain change; applied migrations are never edited.
+
+> **Windows Smart App Control:** on this machine a freshly built, unsigned `smartHRMS.*.dll` can be blocked
+> ("An Application Control policy has blocked this file") by `dotnet run` and `dotnet ef`. Rebuilding with
+> `dotnet build smartHRMS.slnx -p:Deterministic=false` gives the DLL a new hash; so far it has loaded on the first retry.
+> Also stop a running API before building, or its locked DLLs make the build fail.
+
 ---
 
-## 15. Developer Notes
+## 21. API Endpoint Reference
 
-- Keep `Application` free of EF Core / infrastructure dependencies — it should only reference `Domain` plus repository *interfaces*. Business logic and validation belong in `Application` services; data access belongs in `Infrastructure` repositories.
-- Employees, Departments and Designations are soft-deleted only (`Status=Inactive` / `IsActive=false`). HR records are never physically removed through the API, and the `Restrict` foreign keys block it at the database level too.
-- When adding a new entity feature, follow the `Employees`/`Departments` folder pattern: `Interfaces/I<Entity>Repository`, `Features/<Entity>/I<Entity>Service` + `<Entity>Service`, `Features/<Entity>/Dtos/*`, then an `Infrastructure/Repositories/<Entity>Repository`, and finally the controller in the API project.
-- Always generate EF Core migrations after a Domain entity change — don't hand-edit an already-applied migration; add a new one.
-- Run `dotnet build` and `dotnet test` from `backend/` (solution level) before committing, since the solution file (`smartHRMS.slnx`) is the source of truth for what's included in a build.
+Base URL (Development): `http://localhost:5099`. **Auth: none for every endpoint.** Common errors on every endpoint
+with a body: `400` (validation), `500` (unexpected). `{id}` values are GUIDs.
+
+| Method | Endpoint | Purpose | Request | Response | Status codes |
+|---|---|---|---|---|---|
+| GET | `/api/health` | health check | — | status, application, version | 200 |
+| GET | `/api/employees` | list employees | — | `EmployeeDto[]` (by code) | 200 |
+| GET | `/api/employees/{id}` | one employee | — | `EmployeeDto` | 200, 404 |
+| GET | `/api/employees/{id}/profile` | full profile | — | `EmployeeProfileDto` | 200, 404 |
+| POST | `/api/employees` | create | `CreateEmployeeDto` | `EmployeeDto` | 201, 400, 409 |
+| PUT | `/api/employees/{id}` | update / reactivate | `UpdateEmployeeDto` | `EmployeeDto` | 200, 400, 404, 409 |
+| DELETE | `/api/employees/{id}` | deactivate (soft) | — | message | 200, 404 |
+| PUT | `/api/employees/{id}/photo` | upload/replace photo | multipart `photo` | `EmployeeDto` | 200, 400, 404 |
+| DELETE | `/api/employees/{id}/photo` | remove photo | — | `EmployeeDto` | 200, 404 |
+| GET | `/api/departments` | list | — | `DepartmentDto[]` | 200 |
+| GET | `/api/departments/{id}` | one | — | `DepartmentDto` | 200, 404 |
+| POST | `/api/departments` | create | `CreateDepartmentDto` | `DepartmentDto` | 201, 400, 409 |
+| PUT | `/api/departments/{id}` | update / (de)activate | `UpdateDepartmentDto` | `DepartmentDto` | 200, 400, 404, 409 |
+| DELETE | `/api/departments/{id}` | deactivate (soft) | — | message | 200, 404, 409 |
+| GET/POST/PUT/DELETE | `/api/designations[/{id}]` | same as departments | `Create/UpdateDesignationDto` | `DesignationDto` | same as departments |
+| GET | `/api/employees/{employeeId}/personal-details` | full personal details | — | `EmployeePersonalDetailsDto` | 200, 404 |
+| POST | `/api/employees/{employeeId}/personal-details` | add | `CreateEmployeePersonalDetailsDto` | same | 201, 400, 404, 409 |
+| PUT | `/api/employees/{employeeId}/personal-details` | replace | `UpdateEmployeePersonalDetailsDto` | same | 200, 400, 404, 409 |
+| DELETE | `/api/employees/{employeeId}/personal-details` | delete (hard) | — | message | 200, 404 |
+| GET | `/api/employees/{employeeId}/addresses` | list | — | `EmployeeAddressDto[]` | 200, 404 |
+| GET | `/api/employees/{employeeId}/addresses/{id}` | one | — | `EmployeeAddressDto` | 200, 404 |
+| POST | `/api/employees/{employeeId}/addresses` | add | `CreateEmployeeAddressDto` | same | 201, 400, 404, 409 |
+| PUT | `/api/employees/{employeeId}/addresses/{id}` | replace | `UpdateEmployeeAddressDto` | same | 200, 400, 404, 409 |
+| DELETE | `/api/employees/{employeeId}/addresses/{id}` | delete (hard) | — | message | 200, 404 |
+| (same 5) | `/api/employees/{employeeId}/emergency-contacts[/{id}]` | emergency contacts | contact DTOs | `EmployeeEmergencyContactDto` | as addresses |
+| (same 5) | `/api/employees/{employeeId}/educations[/{id}]` | education | education DTOs | `EmployeeEducationDto` | as addresses |
+| (same 5) | `/api/employees/{employeeId}/experiences[/{id}]` | experience | experience DTOs | `EmployeeExperienceDto` | as addresses |
+| GET | `/api/employees/{employeeId}/documents[?includeInactive=true]` | list documents | — | `EmployeeDocumentDto[]` | 200, 404 |
+| GET | `/api/employees/{employeeId}/documents/{documentId}` | one document | — | `EmployeeDocumentDto` | 200, 404 |
+| POST | `/api/employees/{employeeId}/documents` | upload | multipart (§15) | `EmployeeDocumentDto` | 201, 400, 404 |
+| GET | `/api/employees/{employeeId}/documents/{documentId}/download` | download file | — | file stream | 200, 404 |
+| PUT | `/api/employees/{employeeId}/documents/{documentId}` | edit metadata | `UpdateEmployeeDocumentDto` | `EmployeeDocumentDto` | 200, 400, 404 |
+| DELETE | `/api/employees/{employeeId}/documents/{documentId}` | **deactivate (soft)** | — | message | 200, 404 |
+
+Development-only: `GET /openapi/v1.json` (OpenAPI document) and `/swagger` (Swagger UI).
+
+---
+
+## 22. Testing
+
+```bash
+cd backend
+dotnet restore
+dotnet build smartHRMS.slnx          # add -p:Deterministic=false if Smart App Control blocks the DLL
+dotnet test smartHRMS.slnx
+dotnet ef migrations has-pending-model-changes --project SmartHRMS.Infrastructure --startup-project smartHRMS.Api
+```
+
+| Kind | What | Result in the Day 1–12 audit |
+|---|---|---|
+| Build | `dotnet build` | 0 warnings, 0 errors |
+| Unit tests | 169 xUnit tests (services, DTO validation, envelope, photo, documents, profile records) with in-memory fakes | 169 / 169 passed |
+| Migrations | `migrations list`, `has-pending-model-changes`, live schema query | 7 / 7 applied, no drift, schema matches configuration |
+| Runtime API (Day 1–10 regression) | CRUD, relationships, photo, documents, envelope, errors | 193 / 193 |
+| Runtime API (Day 11) | personal details, addresses, contacts, education, experience, profile | 167 / 167 |
+| Runtime API (Day 12) | document upload/list/get/download/update/soft delete, validation, cross-employee access, storage checks | 108 / 108 |
+| Runtime API (audit gaps) | Swagger/OpenAPI, 404/405/415, negative inputs, photo DB+file consistency, document soft-delete on disk | 57 / 57 |
+| Browser (React frontend) | every page and flow, simulated 401/403/500/502/network errors, mobile/tablet layouts | 59 / 59, no JS errors |
+| Concurrency | 10 parallel identical creates | 1 × 201, 9 × 409, one row |
+| Cancellation | client disconnect during a blocked update | no error logged, update not applied |
+| Data integrity | orphans, invalid enums, current employees in inactive departments, photo files vs database | none found |
+
+The runtime suites are shell/Node scripts kept outside the repository and run against a local instance with
+`TEST-*` records only, which are removed afterwards; a checksum of all real data was identical before and after.
+The repository itself contains only unit tests (see §24).
+
+---
+
+## 23. Day 1–12 Completion Matrix
+
+| Day | Feature | Status | Evidence |
+|-----|---------|--------|----------|
+| 1 | Solution builds | PASS | 0 warnings, 0 errors |
+| 1 | Project structure, references, no circular dependency | PASS | `.csproj` references (§2) |
+| 1 | Dependency injection | PASS | all services resolve; every endpoint answered at runtime |
+| 1 | Configuration / environments | PASS | Development CORS origins and document options applied at runtime |
+| 1 | API startup | PASS | `/api/health` 200 |
+| 1 | Swagger / OpenAPI | PASS | `/swagger` and `/openapi/v1.json` 200; 21 routes, no duplicates |
+| 1 | Health endpoint | PASS | 200 with envelope |
+| 2 | Database and connection | PASS | live queries against `SmartHRMSDB` |
+| 2 | Entities mapped: PKs, FKs, lengths, required fields | PASS | `sys.tables`, `sys.foreign_keys`, `INFORMATION_SCHEMA` |
+| 2 | Unique indexes | PASS | `sys.indexes` (§5) |
+| 2 | Safe delete behavior | PASS | every FK `NO_ACTION` |
+| 2 | No unexpected tables | PASS | 10 tables + history; `ApplicationUsers` intentional (unused) |
+| 3 | Layer separation | PASS | Domain/Application/Infrastructure/Api (§2) |
+| 3 | Thin controllers, logic in services | PASS | controllers only bind and delegate |
+| 3 | DTOs separate from entities | PASS | no entity is returned by any endpoint |
+| 4 | Exception handling and envelope | PASS | 400/404/409/500 envelopes verified; 500 hides details |
+| 4 | 404/405/415 envelopes | PASS | audit gap suite |
+| 4 | Cancelled requests handled quietly | PASS (fixed) | was PARTIAL: logged as errors; forced-disconnect test now logs nothing |
+| 4 | CORS | PASS | allowed origin headers on success and errors; other origins refused |
+| 5 | Migrations applied, no drift | PASS | 7/7, `has-pending-model-changes` clean |
+| 5 | Async data access with cancellation tokens | PASS | code review; cancellation test |
+| 5 | UTC timestamps | PASS | responses end in `Z` |
+| 5 | Unique-index race → 409 | PASS | 10 parallel creates → 1 × 201, 9 × 409 |
+| 6 | CRUD workflow end-to-end | PASS | regression suite |
+| 6 | Validation, not-found, duplicates | PASS | regression + audit suites |
+| 7 | Employee create/read/update/deactivate | PASS | regression suite + database checks |
+| 7 | Code and email uniqueness (case-insensitive) | PASS | 409 on duplicates |
+| 7 | Invalid / unknown id | PASS | 404 |
+| 7 | Deterministic list order | PASS (fixed) | was PARTIAL: no ORDER BY; now ordered by employee code, verified at runtime |
+| 8 | Department CRUD + soft delete | PASS | regression suite |
+| 8 | Designation CRUD + soft delete | PASS | regression suite |
+| 8 | Unique names | PASS | 409 |
+| 8 | Delete protection | PASS | 409 while current employees assigned |
+| 8 | Employee ↔ department/designation validation | PASS | unknown → 400, inactive → 400 |
+| 9 | All employee fields persisted | PASS | response + database comparison |
+| 9 | Email/phone/date/enum/salary validation | PASS | audit + regression negatives |
+| 9 | Status changes and reactivation | PASS | regression suite |
+| 9 | Server-side search/filter/pagination | N/A | not implemented in the API (the frontend filters client-side) |
+| Photo | Upload and validation (type, content type, signature, size, empty) | PASS | regression + audit |
+| Photo | Unique stored name, path traversal prevented | PASS | traversal file name stored safely |
+| Photo | Database reference matches physical file | PASS | byte-identical file, `PhotoUrl` equals response |
+| Photo | Replacement deletes old file | PASS | old file gone, one file per employee |
+| Photo | Remove | PASS | file deleted, column cleared |
+| Photo | Unauthorized upload blocked | MISSING | no authentication exists |
+| 10–11 | Profile endpoint (all sections, empty states, masking) | PASS | Day 11 suite |
+| 10–11 | Invalid / unknown employee | PASS | 404 |
+| 10–11 | No sensitive internal fields | PASS | no storage path, password hash or user data in responses |
+| 11 | Personal details | PASS | Day 11 suite |
+| 11 | Addresses | PASS | Day 11 suite |
+| 11 | Emergency contacts | PASS | Day 11 suite |
+| 11 | Education | PASS | Day 11 suite |
+| 11 | Experience | PASS | Day 11 suite |
+| 11 | Cross-employee isolation | PASS | 404 through another employee's route |
+| 12 | Schema and migration | PASS | columns verified in the database |
+| 12 | Metadata fields (name, dates, type, size, content type, description, timestamps) | PASS | Day 12 suite |
+| 12 | Document types (incl. Birth and TIN certificates) | PASS | uploads of every type; unknown type → 400 |
+| 12 | Upload validation (extension, content type, signature, size, empty, name, dates) | PASS | Day 12 suite |
+| 12 | Safe storage, no path exposure, traversal prevented | PASS | Day 12 suite + file system checks |
+| 12 | Failure cleanup (storage failure, database failure) | PASS | forced storage failure → 500, no orphan row; unit test for database failure |
+| 12 | List, show deactivated, cross-employee | PASS | Day 12 suite |
+| 12 | Single document | PASS | Day 12 suite |
+| 12 | Download (bytes, type, name, nosniff, missing file → 404) | PASS | Day 12 + regression suites |
+| 12 | Update metadata without touching the file | PASS | file bytes identical after update |
+| 12 | Soft delete keeps row and file, hides document, idempotent | PASS | database + file system checks |
+| 12 | Authentication/authorization on documents | MISSING | no authentication exists |
+| Auth | Authentication | MISSING | no scheme, login or tokens |
+| Auth | Role-based authorization | MISSING | no roles or policies |
+| Auth | 401/403 responses | N/A | cannot occur without authentication |
+| HTTP | 204 No Content | N/A | the API returns 200 with an envelope by convention |
+| Quality | Pagination on list endpoints | PARTIAL | not needed at current data size; all lists return every row |
+| Quality | Automated integration tests in the repository | PARTIAL | unit tests only; runtime suites live outside the repository |
+| Quality | Package health | PASS | no vulnerable or deprecated runtime packages (xUnit 2 is marked legacy in favor of xUnit v3) |
+| Quality | Frontend build, lint and UI flows | PASS | `npm run build`, `npm run lint`, 59/59 browser checks |
+| Data | Database integrity | PASS | no orphans, invalid values or file mismatches |
+
+---
+
+## 24. Known Limitations
+
+| Severity | Limitation | Impact |
+|---|---|---|
+| High | **No authentication or authorization** | Every endpoint, including salaries, NID/passport numbers and HR documents, is callable anonymously. Document isolation per employee exists, but no user or role check. Not safe beyond a local machine |
+| Low | No server-side search, filter or pagination | Lists return every row; fine at current size, slower as data grows |
+| Low | Unit tests only in the repository | EF queries and the HTTP pipeline are covered by external runtime scripts, not by automated tests in the solution |
+| Low | EF Core logs refused duplicate inserts at error level | Only during genuine concurrent duplicates; clients correctly get 409 |
+| Low | Photo limits are constants | `EmployeePhotoPolicy` (5 MB; jpg/png/webp) is not configurable, unlike documents |
+| Low | Photo request over 6 MB | Returns 400 with the framework's "request body too large" message rather than the photo-specific one |
+| Low | Removed employee JSON fields are ignored silently | Old clients sending `address`, `gender`, ... get no error |
+| Low | Department and Designation code is duplicated | Two parallel copies of service/repository/controller |
+| Low | Redundant EF package references in `smartHRMS.Api.csproj` | `SqlServer`/`Tools` also come through Infrastructure (`Design` is needed) |
+| Low | xUnit 2 is marked legacy | Tests work; migration to xUnit v3 is optional |
+| Info | Smart App Control on the development machine | May block freshly built DLLs; rebuild with `-p:Deterministic=false` |
+
+**Not implemented (future work, not part of Day 1–12):** authentication (JWT tied to `ApplicationUser`) and role-based
+authorization; attendance, leave, payroll, recruitment, performance modules; cloud storage for photos and documents
+(the storage interfaces allow adding it without changing the Application layer).

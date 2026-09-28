@@ -15,6 +15,10 @@ public class EmployeeDocumentConfiguration : IEntityTypeConfiguration<EmployeeDo
             .HasConversion<string>()
             .HasMaxLength(30);
 
+        builder.Property(d => d.DocumentName)
+            .IsRequired()
+            .HasMaxLength(200);
+
         builder.Property(d => d.FileName)
             .IsRequired()
             .HasMaxLength(255);

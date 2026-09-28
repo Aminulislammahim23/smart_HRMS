@@ -45,8 +45,10 @@ public class EmployeeDocumentsController : ControllerBase
     }
 
     /// <summary>
-    /// Uploads a document (multipart/form-data): file, documentType (Nid, Passport, EducationalCertificate, Cv,
-    /// JoiningLetter, ContractPaper, Other) and an optional description. Allowed types and size come from configuration.
+    /// Uploads a document (multipart/form-data): file, documentType (Nid, Passport, BirthCertificate,
+    /// EducationalCertificate, ExperienceCertificate, JoiningLetter, Cv, TinCertificate, ContractPaper, Other),
+    /// documentName, and optional issueDate, expiryDate (yyyy-MM-dd) and description. Allowed types and size come
+    /// from configuration.
     /// </summary>
     [HttpPost]
     [Consumes("multipart/form-data")]
@@ -57,6 +59,9 @@ public class EmployeeDocumentsController : ControllerBase
         Guid employeeId,
         [FromForm] IFormFile? file,
         [FromForm] string? documentType,
+        [FromForm] string? documentName,
+        [FromForm] DateTime? issueDate,
+        [FromForm] DateTime? expiryDate,
         [FromForm] string? description,
         CancellationToken cancellationToken)
     {
@@ -73,8 +78,12 @@ public class EmployeeDocumentsController : ControllerBase
             {
                 Content = stream,
                 FileName = file.FileName,
+                ContentType = file.ContentType,
                 Length = file.Length,
                 DocumentType = documentType,
+                DocumentName = documentName,
+                IssueDate = issueDate,
+                ExpiryDate = expiryDate,
                 Description = description,
             },
             cancellationToken);

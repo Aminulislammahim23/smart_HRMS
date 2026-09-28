@@ -28,6 +28,7 @@ public class EmployeeRepository : IEmployeeRepository
             .Include(e => e.Department)
             .Include(e => e.Designation)
             .AsNoTracking()
+            .OrderBy(e => e.EmployeeCode)
             .ToListAsync(cancellationToken);
     }
 

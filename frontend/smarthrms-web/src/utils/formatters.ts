@@ -14,7 +14,8 @@ const BLOOD_GROUP_LABELS: Record<BloodGroup, string> = {
 
 const SPECIAL_LABELS: Record<string, string> = {
   Nid: 'NID',
-  Cv: 'CV',
+  Cv: 'Resume / CV',
+  TinCertificate: 'TIN certificate',
 }
 
 /** Turns an enum name into a label: "OnLeave" → "On leave", "FullTime" → "Full time", "APositive" → "A+". */
