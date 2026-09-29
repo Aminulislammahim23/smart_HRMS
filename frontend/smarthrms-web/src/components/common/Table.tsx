@@ -20,10 +20,12 @@ interface TableProps<T> {
   rowKey: (row: T) => string
   sort?: SortState
   onSortChange?: (sort: SortState) => void
+  /** Tighter cell padding for tables with many columns. */
+  compact?: boolean
 }
 
 /** Responsive table: scrolls horizontally on narrow screens instead of breaking the layout. */
-export function Table<T>({ columns, rows, rowKey, sort, onSortChange }: TableProps<T>) {
+export function Table<T>({ columns, rows, rowKey, sort, onSortChange, compact = false }: TableProps<T>) {
   const toggleSort = (key: string) => {
     if (!onSortChange) return
     onSortChange({ key, direction: sort?.key === key && sort.direction === 'asc' ? 'desc' : 'asc' })
@@ -31,7 +33,7 @@ export function Table<T>({ columns, rows, rowKey, sort, onSortChange }: TablePro
 
   return (
     <div className="overflow-x-auto">
-      <table className="table">
+      <table className={compact ? 'table table-sm' : 'table'}>
         <thead>
           <tr>
             {columns.map((column) => {

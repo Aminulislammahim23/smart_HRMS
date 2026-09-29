@@ -2,6 +2,7 @@ using smartHRMS.Api.Extensions;
 using smartHRMS.Api.Middleware;
 using smartHRMS.Api.OpenApi;
 using smartHRMS.Application;
+using smartHRMS.Application.Features.Attendances;
 using smartHRMS.Application.Features.EmployeeDocuments;
 using smartHRMS.Infrastructure;
 
@@ -32,7 +33,8 @@ builder.Services.AddProblemDetails();
 //application/infrastructure registration
 var documentsSection = builder.Configuration.GetSection(EmployeeDocumentOptions.SectionName);
 var documentOptions = documentsSection.Get<EmployeeDocumentOptions>() ?? new EmployeeDocumentOptions();
-builder.Services.AddApplication(documentOptions);
+var attendanceOptions = builder.Configuration.GetSection(AttendanceOptions.SectionName).Get<AttendanceOptions>() ?? new AttendanceOptions();
+builder.Services.AddApplication(documentOptions, attendanceOptions);
 
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
     ?? throw new InvalidOperationException("Connection string 'DefaultConnection' was not found.");

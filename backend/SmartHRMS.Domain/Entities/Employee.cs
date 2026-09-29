@@ -50,4 +50,6 @@ public class Employee : BaseEntity
     public ICollection<EmployeeEducation> Educations { get; set; } = new List<EmployeeEducation>();
 
     public ICollection<EmployeeExperience> Experiences { get; set; } = new List<EmployeeExperience>();
+
+    public ICollection<Attendance> Attendances { get; set; } = new List<Attendance>();
 }

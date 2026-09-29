@@ -16,6 +16,15 @@ export function getDocuments(employeeId: string, includeInactive: boolean, signa
   return unwrap(api.get<ApiResponse<EmployeeDocument[]>>(base(employeeId), { params: { includeInactive }, signal }))
 }
 
+/**
+ * Documents of several employees, newest first. The backend has no cross-employee documents endpoint, so this makes
+ * one request per employee (in parallel).
+ */
+export async function getDocumentsForEmployees(employeeIds: readonly string[], includeInactive: boolean, signal?: AbortSignal): Promise<EmployeeDocument[]> {
+  const lists = await Promise.all(employeeIds.map((id) => getDocuments(id, includeInactive, signal)))
+  return lists.flat().sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt))
+}
+
 export function getDocument(employeeId: string, documentId: string, signal?: AbortSignal): Promise<EmployeeDocument> {
   return unwrap(api.get<ApiResponse<EmployeeDocument>>(`${base(employeeId)}/${documentId}`, { signal }))
 }

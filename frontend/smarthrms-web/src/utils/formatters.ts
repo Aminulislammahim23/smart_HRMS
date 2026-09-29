@@ -86,3 +86,40 @@ export function blankToNull(value: string | null | undefined): string | null {
   const trimmed = value?.trim() ?? ''
   return trimmed === '' ? null : trimmed
 }
+
+/** "09:05:00" → "09:05" (attendance times are office wall-clock times; never time-zone converted). */
+export function formatTime(value: string | null | undefined): string {
+  return value ? value.slice(0, 5) : '—'
+}
+
+/** Working minutes → "8h 30m". */
+export function formatDuration(minutes: number | null | undefined): string {
+  if (minutes === null || minutes === undefined) return '—'
+  const hours = Math.floor(minutes / 60)
+  const rest = minutes % 60
+  return hours === 0 ? `${rest}m` : `${hours}h ${String(rest).padStart(2, '0')}m`
+}
+
+/** A Date's local calendar day as "yyyy-MM-dd". */
+export function toIsoDate(date: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+}
+
+/** First and last day of a month ("yyyy-MM") as "yyyy-MM-dd". */
+export function monthRange(month: string): { start: string; end: string } {
+  const [year, monthIndex] = month.split('-').map(Number)
+  return { start: toIsoDate(new Date(year, monthIndex - 1, 1)), end: toIsoDate(new Date(year, monthIndex, 0)) }
+}
+
+/** "2026-09" → "September 2026". */
+export function formatMonth(month: string): string {
+  const [year, monthIndex] = month.split('-').map(Number)
+  return new Date(year, monthIndex - 1, 1).toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
+}
+
+/** Moves a "yyyy-MM" month by n months. */
+export function shiftMonth(month: string, n: number): string {
+  const [year, monthIndex] = month.split('-').map(Number)
+  return toIsoDate(new Date(year, monthIndex - 1 + n, 1)).slice(0, 7)
+}

@@ -22,6 +22,7 @@ public static class DependencyInjection
         services.AddScoped<IDesignationRepository, DesignationRepository>();
         services.AddScoped<IEmployeeDocumentRepository, EmployeeDocumentRepository>();
         services.AddScoped(typeof(IEmployeeOwnedRepository<>), typeof(EmployeeOwnedRepository<>));
+        services.AddScoped<IAttendanceRepository, AttendanceRepository>();
 
         services.AddSingleton<IFileStorageService>(new LocalFileStorageService(fileStorageRootPath));
         services.AddSingleton<IDocumentStorageService>(new LocalDocumentStorageService(documentStorageRootPath));

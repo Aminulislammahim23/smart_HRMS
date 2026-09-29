@@ -1,8 +1,8 @@
 # SmartHRMS Backend Documentation
 
-> Describes the code, database and API **as they are after the Day 1–12 audit (2026-09-28)**. Everything marked as
-> implemented was verified at runtime against the SQL Server database (see §22 and §23). Planned work is listed only in
-> §24 and is clearly marked as not implemented.
+> Describes the code, database and API **as they are after Day 13 (2026-09-30)**. Everything marked as implemented was
+> verified at runtime against the SQL Server database (see §22, §23 and §25). Planned work is listed only in §24 and is
+> clearly marked as not implemented.
 
 ---
 
@@ -11,7 +11,7 @@
 **SmartHRMS** is a Human Resource Management System. This repository contains its backend: an ASP.NET Core Web API
 that stores HR data in SQL Server and serves it as JSON to the React frontend in `frontend/smarthrms-web`.
 
-**Current scope (Day 1–12):**
+**Current scope (Day 1–13):**
 
 | Area | What exists |
 |---|---|
@@ -19,9 +19,10 @@ that stores HR data in SQL Server and serves it as JSON to the React frontend in
 | Employees | CRUD with job information (department, designation, joining date, employment type, salary, status), deactivation and reactivation, profile photo |
 | Employee profile | Personal details (gender, marital status, blood group, nationality, NID, passport), addresses, emergency contacts, education, work experience, and a one-call profile view |
 | Employee documents | Upload, list, view metadata, download, edit metadata and soft-delete HR documents (NID, passport, certificates, CV, ...) kept in private storage |
+| Attendance (Day 13) | Check-in/check-out at office time, working-minute calculation, Present/Late/Absent/HalfDay/Leave status, HR-maintained records (CRUD), history and filtering — see §25 |
 | Platform | Standard response envelope, centralized error handling, validation, OpenAPI/Swagger, CORS for the frontend |
 
-**Not implemented:** authentication and authorization (every endpoint is anonymous), attendance, leave, payroll,
+**Not implemented:** authentication and authorization (every endpoint is anonymous), leave management, payroll,
 recruitment, performance (see §17 and §24).
 
 ### Development history
@@ -40,6 +41,7 @@ recruitment, performance (see §17 and §24).
 | 11 | Complete employee profile: personal details, addresses, emergency contacts, education, experience (flat Day 9–10 columns moved into these tables) |
 | 12 | Employee document management: document name, issue/expiry dates, Birth/TIN certificate types, Content-Type cross-check; delete remains a soft delete |
 | Audit (Day 1–12) | Cancelled requests no longer logged as server errors; employee list ordered by employee code; documentation rewritten |
+| 13 | Employee attendance management: `Attendances` table, check-in/check-out, working minutes, status rules, CRUD, history and filters; office time zone centralized in `AttendanceClock` |
 
 ---
 
@@ -99,7 +101,7 @@ backend/
     App_Data/employee-documents/        PRIVATE document storage (never served, gitignored)
 
   SmartHRMS.Application/                business logic (class library)
-    DependencyInjection.cs              AddApplication(documentOptions)
+    DependencyInjection.cs              AddApplication(documentOptions, attendanceOptions)
     Common/Exceptions/                  NotFoundException, ConflictException, BadRequestException
     Common/Models/ApiResponse.cs        response envelope
     Common/Files/FileSignature.cs       magic-byte checks shared by photos and documents
@@ -112,24 +114,25 @@ backend/
     Features/EmployeePersonalDetails/, EmployeeAddresses/, EmployeeEmergencyContacts/,
              EmployeeEducations/, EmployeeExperiences/
     Features/EmployeeDocuments/         EmployeeDocumentService, EmployeeDocumentPolicy, EmployeeDocumentOptions, Dtos/
+    Features/Attendances/               AttendanceService, AttendanceClock, AttendanceOptions, AttendanceFilter, Dtos/
 
   SmartHRMS.Domain/                     entities and enums (no dependencies)
     Common/BaseEntity.cs, Common/EmployeeOwnedEntity.cs
     Entities/                           Department, Designation, Employee, ApplicationUser, EmployeeDocument,
                                         EmployeePersonalDetails, EmployeeAddress, EmployeeEmergencyContact,
-                                        EmployeeEducation, EmployeeExperience
+                                        EmployeeEducation, EmployeeExperience, Attendance
     Enums/                              EmployeeStatus, EmploymentType, Gender, MaritalStatus, BloodGroup,
-                                        AddressType, EmployeeDocumentType
+                                        AddressType, EmployeeDocumentType, AttendanceStatus
 
   SmartHRMS.Infrastructure/             data access and storage
     DependencyInjection.cs              AddInfrastructure(connectionString, photoRoot, documentRoot)
     Persistence/SmartHRMSDbContext.cs
     Persistence/Configurations/         one IEntityTypeConfiguration<T> per entity
-    Repositories/                       Employee, Department, Designation, EmployeeDocument, EmployeeOwned<T>
+    Repositories/                       Employee, Department, Designation, EmployeeDocument, EmployeeOwned<T>, Attendance
     Storage/                            LocalFileStorageService, LocalDocumentStorageService, SafeStoragePath
-    Migrations/                         7 migrations (§20)
+    Migrations/                         8 migrations (§20)
 
-  smartHRMS.Tests/                      xUnit unit tests with in-memory fakes (169 tests)
+  smartHRMS.Tests/                      xUnit unit tests with in-memory fakes (215 tests)
 ```
 
 > **Folder-name casing:** the folders `SmartHRMS.Application`, `SmartHRMS.Domain`, `SmartHRMS.Infrastructure` start with
@@ -161,8 +164,9 @@ Services:
 2. OpenAPI with `FormFileOperationTransformer`.
 3. CORS policy `Frontend` from `Cors:AllowedOrigins` (§17).
 4. `AppExceptionHandler` + problem details.
-5. `AddApplication(documentOptions)`: document rules from the `EmployeeDocuments` section are validated here, so the
-   API **refuses to start** with an unusable configuration.
+5. `AddApplication(documentOptions, attendanceOptions)`: document rules (`EmployeeDocuments` section) and attendance
+   rules (`Attendance` section: time zone, workday start, grace minutes) are validated here, so the API **refuses to
+   start** with an unusable configuration. Also registers `TimeProvider.System` and the singleton `AttendanceClock`.
 6. `AddInfrastructure(connectionString, webRootPath, documentStoragePath)`. The API refuses to start if the document
    storage path is inside `wwwroot`.
 
@@ -180,7 +184,7 @@ HTTPS port is configured) → `UseAuthorization` (no policies exist) → `MapCon
   Configurations are applied with `ApplyConfigurationsFromAssembly`.
 - **Tables:** `Departments`, `Designations`, `Employees`, `ApplicationUsers`, `EmployeeDocuments`,
   `EmployeePersonalDetails`, `EmployeeAddresses`, `EmployeeEmergencyContacts`, `EmployeeEducations`,
-  `EmployeeExperiences` (+ `__EFMigrationsHistory`).
+  `EmployeeExperiences`, `Attendances` (+ `__EFMigrationsHistory`).
 - **Primary keys:** every table has a `uniqueidentifier` `Id` generated by the application.
 
 ### Foreign keys (all `ON DELETE NO ACTION`)
@@ -190,7 +194,7 @@ HTTPS port is configured) → `UseAuthorization` (no policies exist) → `MapCon
 | `Employees.DepartmentId` | `Departments.Id` |
 | `Employees.DesignationId` | `Designations.Id` |
 | `ApplicationUsers.EmployeeId` | `Employees.Id` |
-| `EmployeeDocuments.EmployeeId`, `EmployeePersonalDetails.EmployeeId`, `EmployeeAddresses.EmployeeId`, `EmployeeEmergencyContacts.EmployeeId`, `EmployeeEducations.EmployeeId`, `EmployeeExperiences.EmployeeId` | `Employees.Id` |
+| `EmployeeDocuments.EmployeeId`, `EmployeePersonalDetails.EmployeeId`, `EmployeeAddresses.EmployeeId`, `EmployeeEmergencyContacts.EmployeeId`, `EmployeeEducations.EmployeeId`, `EmployeeExperiences.EmployeeId`, `Attendances.EmployeeId` | `Employees.Id` |
 
 Nothing cascades: the database refuses to delete a department, designation or employee that still has dependents.
 
@@ -205,6 +209,7 @@ Nothing cascades: the database refuses to delete a department, designation or em
 | `EmployeeAddresses` | unique (`EmployeeId`, `AddressType`) |
 | `EmployeeDocuments` | (`EmployeeId`, `IsActive`) |
 | `EmployeeEmergencyContacts`, `EmployeeEducations`, `EmployeeExperiences` | `EmployeeId` |
+| `Attendances` | unique (`EmployeeId`, `AttendanceDate`); `AttendanceDate` |
 
 Uniqueness comparisons use SQL Server's default case-insensitive collation.
 
@@ -216,13 +221,15 @@ Uniqueness comparisons use SQL Server's default case-insensitive collation.
 | Department / Designation | deactivate | `IsActive = false` |
 | Employee document | deactivate; row and file kept for HR history | `IsActive = false` |
 | Profile records (personal details, addresses, contacts, education, experience) | permanent delete | none — hard delete |
+| Attendance record | permanent delete (HR correction) | none — hard delete |
 
 ### Behavior built into the DbContext
 
 - **Unique-index races → 409:** `SaveChangesAsync` converts SQL errors 2601/2627 into `ConflictException`. Verified in
   the audit with 10 parallel identical creates: 1 × `201`, 9 × `409`, exactly one row stored.
 - **UTC timestamps:** a value converter marks `CreatedAt`/`UpdatedAt` as UTC when read, so they serialize with `Z`.
-  Date-only values (`DateOfBirth`, `JoiningDate`, document dates, ...) are left unzoned.
+  Date-only values (`DateOfBirth`, `JoiningDate`, document dates, ...) are left unzoned. Attendance dates and times
+  are office-local `date`/`time(0)` values (§25), never converted by the DbContext.
 
 ---
 
@@ -299,6 +306,16 @@ current job); `Responsibilities` (2000) optional.
 | `IsActive` | default `true`; `false` = deactivated (soft delete) |
 | `CreatedAt` | upload time (returned as `uploadedAt`) |
 
+### Attendance (Day 13)
+| Field | Rule |
+|---|---|
+| `EmployeeId` | required FK → `Employees` (NO ACTION); navigation `Employee`, and `Employee.Attendances` |
+| `AttendanceDate` | required `date` (calendar date in the office time zone); unique together with `EmployeeId` |
+| `CheckInTime`, `CheckOutTime` | optional `time(0)` (office wall-clock time, whole seconds); check-out never earlier than check-in |
+| `WorkingMinutes` | optional `int`, **always calculated by the server** (check-out − check-in, whole minutes) |
+| `Status` | `AttendanceStatus` stored as string (20): `Present`, `Late`, `Absent`, `HalfDay`, `Leave` |
+| `Remarks` | optional, max 500 |
+
 ---
 
 ## 7. DTO Documentation
@@ -328,6 +345,11 @@ All request DTOs are validated with Data Annotations before the service runs; en
 | `UploadEmployeeDocumentDto` | internal (controller → service) | `Content`, `FileName`, `ContentType`, `Length`, `DocumentType`, `DocumentName`, `IssueDate`, `ExpiryDate`, `Description` |
 | `UpdateEmployeeDocumentDto` | `PUT .../documents/{id}` | `documentType`, `documentName` (omitted = kept), `issueDate`, `expiryDate`, `description` (omitted = cleared) |
 | `EmployeeDocumentFileDto` | internal (download) | `Content`, `FileName`, `ContentType` |
+| `AttendanceDto` | attendance responses | `id`, `employeeId`, `employeeCode`, `employeeName`, `attendanceDate` ("yyyy-MM-dd"), `checkInTime`, `checkOutTime` ("HH:mm:ss"), `workingMinutes`, `status`, `remarks`, `createdAt`, `updatedAt` |
+| `CreateAttendanceDto` | `POST /api/attendance` | `employeeId`*, `attendanceDate`*, `status`*, `checkInTime`, `checkOutTime`, `remarks` (500). No `workingMinutes` field — any sent value is ignored |
+| `UpdateAttendanceDto` | `PUT /api/attendance/{id}` | `status`*, `checkInTime`, `checkOutTime`, `remarks` — full update; employee and date can't change |
+| `CheckInDto` / `CheckOutDto` | check-in / check-out | `employeeId`*, `attendanceDate` (optional; must be today), `remarks` (500) |
+| `AttendanceQueryDto` / `AttendanceListQueryDto` | query string | `date` or `startDate`/`endDate`, `status`; the list version adds `employeeId` |
 
 `*` = required. Update DTOs of profile records inherit their create DTO and replace every field.
 
@@ -345,10 +367,12 @@ All services are registered **scoped** in `AddApplication`.
 | `EmployeePersonalDetailsService` | `GetAsync`, `CreateAsync` (409 if present), `UpdateAsync`, `DeleteAsync`; NID/passport uniqueness |
 | `EmployeeOwnedRecordService<TEntity, TSaveDto, TDto>` (base) → `EmployeeAddressService`, `EmployeeEmergencyContactService`, `EmployeeEducationService`, `EmployeeExperienceService` | `GetAllAsync`, `GetByIdAsync`, `CreateAsync`, `UpdateAsync`, `DeleteAsync`. Every call first checks the employee exists and looks records up by employee **and** record id. Subclasses add their rules (one address per type, unique contact phone, passing-year range and duplicate check, experience date rules) |
 | `EmployeeDocumentService` | `UploadAsync`, `GetByEmployeeAsync(includeInactive)`, `GetByIdAsync`, `DownloadAsync`, `UpdateAsync`, `DeactivateAsync` (§15) |
+| `AttendanceService` | `GetAllAsync(filters)`, `GetByEmployeeAsync`, `GetByIdAsync`, `CreateAsync`, `UpdateAsync`, `DeleteAsync`, `CheckInAsync`, `CheckOutAsync` (§25) |
 
 Helpers: `EmployeePhotoPolicy` (photo types/size), `EmployeeDocumentPolicy` (verifiable document formats, content
 types, startup validation), `EmployeeStatusRules` (`Active` and `OnLeave` count as current), `FileSignature`,
-`InputText`.
+`InputText`, and `AttendanceClock` (singleton: today's date and the current time in the office time zone, and the
+Late rule — the only place attendance reads the clock).
 
 ---
 
@@ -364,6 +388,7 @@ all registered **scoped**. Every method is async and takes a `CancellationToken`
 | `DepartmentRepository` / `DesignationRepository` | `GetByIdAsync`, `GetAllAsync` (ordered by name), `NameExistsAsync`, `CountEmployeesAsync(statuses)`, `GetEmployeeCountsAsync`, `AddAsync`, `SaveChangesAsync` |
 | `EmployeeDocumentRepository` | `GetByIdAsync(employeeId, documentId)`, `GetByEmployeeIdAsync(employeeId, includeInactive)` (newest first), `AddAsync`, `SaveChangesAsync` |
 | `EmployeeOwnedRepository<T>` (generic) | `GetByIdAsync(employeeId, id)`, `GetByEmployeeIdAsync`, `AnyAsync`, `AddAsync`, `Remove`, `SaveChangesAsync` |
+| `AttendanceRepository` | `GetByIdAsync`, `GetByEmployeeAndDateAsync` (both with the employee), `SearchAsync(filter)` (newest date first, then employee code), `AddAsync`, `Remove`, `SaveChangesAsync` |
 
 Storage services (registered **singleton**): `LocalFileStorageService` (`SaveAsync`, `DeleteAsync`) under `wwwroot`,
 and `LocalDocumentStorageService` (`SaveAsync`, `OpenReadAsync`, `DeleteAsync`) under `App_Data/employee-documents`.
@@ -389,8 +414,10 @@ Controllers are thin: bind the request, call one service method, return `ApiResp
 | `EmployeeEducationsController` | `/api/employees/{employeeId}/educations` | same as addresses |
 | `EmployeeExperiencesController` | `/api/employees/{employeeId}/experiences` | same as addresses |
 | `EmployeeDocumentsController` | `/api/employees/{employeeId}/documents` | `GET`, `GET {documentId}`, `POST`, `GET {documentId}/download`, `PUT {documentId}`, `DELETE {documentId}` |
+| `AttendanceController` | `/api/attendance` | `GET`, `GET {id}`, `POST`, `PUT {id}`, `DELETE {id}`, `POST check-in`, `POST check-out`; plus `GET /api/employees/{employeeId}/attendance` |
 
-The OpenAPI document lists **21 distinct route templates with no duplicates** (checked in the audit). Every endpoint
+The OpenAPI document lists **26 distinct route templates with no duplicates** (21 before Day 13 + 5 attendance; checked
+at runtime). Every endpoint
 with its request, response and status codes is in §21.
 
 ---
@@ -514,10 +541,11 @@ row; if saving the row fails, the file is deleted again (no orphan files). The s
 | Email | `[EmailAddress]` | employee, emergency contact |
 | Phone | `[Phone]`; blank employee phone stored as `null` | employee, emergency contact |
 | Numbers | `basicSalary` 0 … 9999999999999999.99; `passingYear` 1900–2200 + birth-year rule | DTOs + service |
-| Dates | invalid JSON/form dates → `400`; employee DOB past, joining ≥ DOB; experience and education rules; document expiry ≥ issue | services |
+| Dates | invalid JSON/form/query dates → `400`; employee DOB past, joining ≥ DOB; experience and education rules; document expiry ≥ issue; attendance rules in §25 | services |
+| Times | `"HH:mm"` or `"HH:mm:ss"`; invalid (e.g. `25:00`) → `400`; attendance check-out ≥ check-in | JSON + `AttendanceService` |
 | Enums | names only, case-insensitive; numbers/unknown → `400` | JSON options |
 | Foreign keys | department/designation must exist and be active for new assignments | `EmployeeService` |
-| Duplicates | employee code/email, department/designation names, NID/passport, address type, contact phone, education → `409` | services + unique indexes |
+| Duplicates | employee code/email, department/designation names, NID/passport, address type, contact phone, education, attendance per employee and date, second check-in/check-out → `409` | services + unique indexes |
 | Files | photo and document rules in §14/§15 | policies + services |
 | IDs | route `{id:guid}` constraint: malformed id → `404`; unknown id → `404` | routing + services |
 | Malformed body | invalid JSON → `400` "The request body is not valid JSON." or "The value for '<field>' is invalid." | `AddApiControllers` |
@@ -590,7 +618,7 @@ dotnet ef migrations has-pending-model-changes --project SmartHRMS.Infrastructur
 dotnet ef migrations remove --project SmartHRMS.Infrastructure --startup-project smartHRMS.Api
 ```
 
-Applied migrations (all 7 applied; no pending model changes):
+Applied migrations (all 8 applied; no pending model changes):
 
 | # | Migration | Change |
 |---|---|---|
@@ -601,14 +629,19 @@ Applied migrations (all 7 applied; no pending model changes):
 | 5 | `AddEmployeeProfileAndDocuments` (Day 10) | salary, blood group, permanent address, emergency contact columns; `EmployeeDocuments` table |
 | 6 | `AddEmployeeProfileRecords` (Day 11) | five profile tables; drops the flat address/gender/blood-group/emergency-contact columns (all empty when applied) |
 | 7 | `AddEmployeeDocumentDetails` (Day 12) | `DocumentName` (backfilled from `FileName`), `IssueDate`, `ExpiryDate` |
+| 8 | `AddAttendance` (Day 13) | creates `Attendances` (FK to `Employees`, NO ACTION), unique (`EmployeeId`, `AttendanceDate`), index on `AttendanceDate`. Purely additive; no existing table touched |
 
 Before each schema change since Day 9 a verified copy-only backup was taken
-(`SmartHRMSDB_before_Day9/10/11/12_*.bak` in the SQL Server backup folder). Migrations are only generated after a
+(`SmartHRMSDB_before_Day9/10/11/12/13_*.bak` in the SQL Server backup folder). Migrations are only generated after a
 domain change; applied migrations are never edited.
 
 > **Windows Smart App Control:** on this machine a freshly built, unsigned `smartHRMS.*.dll` can be blocked
 > ("An Application Control policy has blocked this file") by `dotnet run` and `dotnet ef`. Rebuilding with
-> `dotnet build smartHRMS.slnx -p:Deterministic=false` gives the DLL a new hash; so far it has loaded on the first retry.
+> `dotnet build smartHRMS.slnx -p:Deterministic=false` gives the DLL a new hash, which is often enough. On Day 13 the
+> rebuilt `smartHRMS.Api/bin/Debug/.../smartHRMS.Api.dll` stayed blocked through 10 rebuilds while an identical build
+> in another folder (`dotnet build smartHRMS.Api -p:Deterministic=false -o <folder>`) ran fine. The migration was
+> generated and applied from that build by running EF's `ef.dll` with `--startup-assembly <folder>\smartHRMS.Api.dll`
+> and `-- --contentRoot <path to smartHRMS.Api>` (the same command `dotnet ef ... --verbose` prints).
 > Also stop a running API before building, or its locked DLLs make the build fail.
 
 ---
@@ -653,6 +686,14 @@ with a body: `400` (validation), `500` (unexpected). `{id}` values are GUIDs.
 | GET | `/api/employees/{employeeId}/documents/{documentId}/download` | download file | — | file stream | 200, 404 |
 | PUT | `/api/employees/{employeeId}/documents/{documentId}` | edit metadata | `UpdateEmployeeDocumentDto` | `EmployeeDocumentDto` | 200, 400, 404 |
 | DELETE | `/api/employees/{employeeId}/documents/{documentId}` | **deactivate (soft)** | — | message | 200, 404 |
+| GET | `/api/attendance[?employeeId&date&startDate&endDate&status]` | list / filter attendance | query | `AttendanceDto[]` (newest date first) | 200, 400 |
+| GET | `/api/attendance/{id}` | one record | — | `AttendanceDto` | 200, 404 |
+| POST | `/api/attendance` | manual record (HR) | `CreateAttendanceDto` | `AttendanceDto` | 201, 400, 404, 409 |
+| PUT | `/api/attendance/{id}` | correct a record (HR) | `UpdateAttendanceDto` | `AttendanceDto` | 200, 400, 404 |
+| DELETE | `/api/attendance/{id}` | delete (hard) | — | message | 200, 404 |
+| POST | `/api/attendance/check-in` | check in now | `CheckInDto` | `AttendanceDto` | 200, 400, 404, 409 |
+| POST | `/api/attendance/check-out` | check out now | `CheckOutDto` | `AttendanceDto` | 200, 400, 404, 409 |
+| GET | `/api/employees/{employeeId}/attendance[?date&startDate&endDate&status]` | employee history | query | `AttendanceDto[]` | 200, 400, 404 |
 
 Development-only: `GET /openapi/v1.json` (OpenAPI document) and `/swagger` (Swagger UI).
 
@@ -668,15 +709,16 @@ dotnet test smartHRMS.slnx
 dotnet ef migrations has-pending-model-changes --project SmartHRMS.Infrastructure --startup-project smartHRMS.Api
 ```
 
-| Kind | What | Result in the Day 1–12 audit |
+| Kind | What | Result (Day 1–12 audit, re-run on Day 13) |
 |---|---|---|
 | Build | `dotnet build` | 0 warnings, 0 errors |
-| Unit tests | 169 xUnit tests (services, DTO validation, envelope, photo, documents, profile records) with in-memory fakes | 169 / 169 passed |
-| Migrations | `migrations list`, `has-pending-model-changes`, live schema query | 7 / 7 applied, no drift, schema matches configuration |
+| Unit tests | 215 xUnit tests (services, DTO validation, envelope, photo, documents, profile records, attendance) with in-memory fakes and a fake `TimeProvider` | 215 / 215 passed |
+| Migrations | `migrations list`, `has-pending-model-changes`, live schema query | 8 / 8 applied, no drift, schema matches configuration |
+| Runtime API (Day 13) | attendance check-in/out, CRUD, filters, history, validation, DB constraints, parallel check-ins, Swagger | 137 / 137 |
 | Runtime API (Day 1–10 regression) | CRUD, relationships, photo, documents, envelope, errors | 193 / 193 |
 | Runtime API (Day 11) | personal details, addresses, contacts, education, experience, profile | 167 / 167 |
 | Runtime API (Day 12) | document upload/list/get/download/update/soft delete, validation, cross-employee access, storage checks | 108 / 108 |
-| Runtime API (audit gaps) | Swagger/OpenAPI, 404/405/415, negative inputs, photo DB+file consistency, document soft-delete on disk | 57 / 57 |
+| Runtime API (audit gaps) | Swagger/OpenAPI (26 routes), 404/405/415, negative inputs, photo DB+file consistency, document soft-delete on disk | 57 / 57 |
 | Browser (React frontend) | every page and flow, simulated 401/403/500/502/network errors, mobile/tablet layouts | 59 / 59, no JS errors |
 | Concurrency | 10 parallel identical creates | 1 × 201, 9 × 409, one row |
 | Cancellation | client disconnect during a blocked update | no error logged, update not applied |
@@ -688,7 +730,7 @@ The repository itself contains only unit tests (see §24).
 
 ---
 
-## 23. Day 1–12 Completion Matrix
+## 23. Day 1–13 Completion Matrix
 
 | Day | Feature | Status | Evidence |
 |-----|---------|--------|----------|
@@ -766,6 +808,15 @@ The repository itself contains only unit tests (see §24).
 | Quality | Package health | PASS | no vulnerable or deprecated runtime packages (xUnit 2 is marked legacy in favor of xUnit v3) |
 | Quality | Frontend build, lint and UI flows | PASS | `npm run build`, `npm run lint`, 59/59 browser checks |
 | Data | Database integrity | PASS | no orphans, invalid values or file mismatches |
+| 13 | Attendances table, FK, unique (employee, date), migration | PASS | schema queried in SQL Server; duplicate and orphan inserts rejected by the database |
+| 13 | Check-in (office time, Present/Late rule, duplicate → 409) | PASS | Day 13 suite + unit tests |
+| 13 | Check-out (working minutes, no check-in → 400, duplicate → 409, earlier than check-in → 400) | PASS | Day 13 suite + unit tests |
+| 13 | Manual create / update / delete (HR) | PASS | Day 13 suite |
+| 13 | Employee validation (exists, current status) | PASS | 404 unknown, 400 inactive |
+| 13 | Filters (employee, date, range, status) and employee history | PASS | Day 13 suite |
+| 13 | Time zone handling (office date differs from UTC date) | PASS | live run at 21:32 UTC recorded the next Dhaka date; unit test for the same case |
+| 13 | Parallel check-ins | PASS | 5 parallel → 1 × 200, 4 × 409, one row |
+| 13 | Authentication / authorization for attendance | MISSING | no authentication exists in the project |
 
 ---
 
@@ -773,8 +824,12 @@ The repository itself contains only unit tests (see §24).
 
 | Severity | Limitation | Impact |
 |---|---|---|
-| High | **No authentication or authorization** | Every endpoint, including salaries, NID/passport numbers and HR documents, is callable anonymously. Document isolation per employee exists, but no user or role check. Not safe beyond a local machine |
-| Low | No server-side search, filter or pagination | Lists return every row; fine at current size, slower as data grows |
+| High | **No authentication or authorization** | Every endpoint, including salaries, NID/passport numbers, HR documents and attendance, is callable anonymously. Anyone can check in or out **for any employee id**. No user or role check. Not safe beyond a local machine |
+| Medium | No pagination | Lists return every matching row. Attendance grows by one row per employee per day, so clients should always pass a date or range |
+| Low | Attendance: no overnight shifts | Check-in/out apply to one office date; a shift past midnight must be corrected by HR |
+| Low | Attendance: no weekends, holidays or leave integration | Absent/Leave are recorded explicitly; nothing is generated automatically for missing days |
+| Low | Attendance: Late rule only | Any check-in up to workday start + grace is Present, including very early ones; half days are not detected automatically |
+| Low | Attendance deletes are permanent | No history of corrections is kept (only `updatedAt`) |
 | Low | Unit tests only in the repository | EF queries and the HTTP pipeline are covered by external runtime scripts, not by automated tests in the solution |
 | Low | EF Core logs refused duplicate inserts at error level | Only during genuine concurrent duplicates; clients correctly get 409 |
 | Low | Photo limits are constants | `EmployeePhotoPolicy` (5 MB; jpg/png/webp) is not configurable, unlike documents |
@@ -783,8 +838,80 @@ The repository itself contains only unit tests (see §24).
 | Low | Department and Designation code is duplicated | Two parallel copies of service/repository/controller |
 | Low | Redundant EF package references in `smartHRMS.Api.csproj` | `SqlServer`/`Tools` also come through Infrastructure (`Design` is needed) |
 | Low | xUnit 2 is marked legacy | Tests work; migration to xUnit v3 is optional |
-| Info | Smart App Control on the development machine | May block freshly built DLLs; rebuild with `-p:Deterministic=false` |
+| Info | Smart App Control on the development machine | May block freshly built DLLs, sometimes persistently (see §20) |
 
-**Not implemented (future work, not part of Day 1–12):** authentication (JWT tied to `ApplicationUser`) and role-based
-authorization; attendance, leave, payroll, recruitment, performance modules; cloud storage for photos and documents
-(the storage interfaces allow adding it without changing the Application layer).
+**Not implemented (future work, not part of Day 1–13):** authentication (JWT tied to `ApplicationUser`) and role-based
+authorization; leave management, payroll, recruitment, performance modules; an attendance UI in the React frontend;
+cloud storage for photos and documents (the storage interfaces allow adding it without changing the Application layer).
+
+---
+
+## 25. Day 13 — Attendance Management
+
+**Module:** Employee Attendance Management (`Features/Attendances`, `AttendanceController`, `Attendances` table).
+
+**Features:** attendance CRUD (HR), self check-in and check-out, working-time calculation, attendance status, employee
+attendance history, date / date-range / status / employee filtering, employee validation, duplicate prevention.
+Authorization is **not** implemented (the project has no authentication).
+
+### Database
+
+```text
+Employees 1 ──── * Attendances
+             EmployeeId (FK, NO ACTION)
+             unique (EmployeeId, AttendanceDate)
+```
+
+`Attendances`: `Id`, `EmployeeId`, `AttendanceDate` (`date`), `CheckInTime`/`CheckOutTime` (`time(0)`),
+`WorkingMinutes` (`int`), `Status` (`nvarchar(20)`), `Remarks` (`nvarchar(500)`), `CreatedAt`, `UpdatedAt`.
+Migration `AddAttendance`. The database itself rejects a second record for the same employee and date and a record
+for an unknown employee, and refuses to delete an employee who has attendance.
+
+### Date and time handling
+
+- Configuration (`appsettings.json`, section `Attendance`): `TimeZone` = `Asia/Dhaka`, `WorkdayStartTime` =
+  `"09:00"`, `LateGraceMinutes` = `15`. Invalid values stop the API at startup.
+- `AttendanceClock` is the only place attendance reads the clock: it converts the UTC instant from `TimeProvider`
+  into the office time zone. The server's own time zone is never used.
+- Attendance dates are office calendar dates and times are office wall-clock times, stored and returned without
+  offsets (`"2026-09-30"`, `"09:05:00"`), precise to the second. Example verified live: at 21:32 UTC on 29 Sep, a
+  check-in was recorded on **30 Sep at 03:32:59** (Dhaka).
+
+### Business rules
+
+| Rule | Behavior |
+|---|---|
+| One record per employee per date | second create or check-in → `409` (also enforced by the unique index, including simultaneous requests) |
+| Employee must exist | `404` |
+| Employee must be current (`Active` or `OnLeave`) for create and check-in | otherwise `400`. Updates of existing records remain possible |
+| Check-in / check-out time | always the server's current office time; `attendanceDate` in the body is optional and must be today (`400` otherwise) — no back-dating |
+| Status on check-in | `Late` if later than workday start + grace (09:15 by default), otherwise `Present`. Checking in on a pre-created `Absent` record fills it in; a `HalfDay` stays `HalfDay`; a `Leave` day → `409` |
+| Check-out | needs a check-in today (`400`), only once (`409`), not earlier than the check-in (`400`) |
+| Working minutes | `checkOutTime − checkInTime` in whole minutes, calculated by the server on check-out, create and update; `null` until both times exist; clients can't set it |
+| Manual create (HR) | `status` required; not before the joining date; future dates only for `Leave`; `Absent`/`Leave` have no times; check-out needs check-in and ≥ check-in; today's times not in the future |
+| Update (HR) | full update of status, times and remarks with the same rules; employee and date can't change |
+| Delete (HR) | permanent |
+| Filters | `employeeId`, `date` **or** `startDate`/`endDate` (not both; start ≤ end), `status` by name (case-insensitive; numbers rejected) |
+
+### API
+
+See §21 for the full table. Frontend-ready: every response is the standard envelope with `AttendanceDto` items that
+already contain `employeeCode` and `employeeName`, so a dashboard ("today's attendance", table, employee/date/status
+filters, check-in/out buttons, details) needs no extra calls.
+
+### Day 13 test checklist (executed on 2026-09-30)
+
+| Area | Test | Result |
+|---|---|---|
+| Employee validation | existing / non-existing / inactive employee | PASS |
+| Creation | valid, duplicate, invalid employee, invalid date, invalid status (name and number), missing fields, future date, before joining date, times on Absent/Leave | PASS |
+| Check-in | valid (office date/time, status rule), duplicate, invalid employee, inactive employee, wrong date, Leave day, parallel requests | PASS |
+| Check-out | valid, without attendance, without check-in, duplicate, earlier than check-in (unit test), working-minute calculation (510 min for 09:00–17:30, and live check) | PASS |
+| Retrieval | by id, unknown id, employee history, by date, by status, by date range, invalid filters | PASS |
+| Update / delete | valid update with recalculation, invalid times, unknown record, delete, delete unknown | PASS |
+| Database | table, FK, unique constraint, NO ACTION delete, migration applied, no model drift | PASS |
+| Swagger | attendance routes and schemas present | PASS |
+| Authentication / authorization | — | NOT TESTED (not implemented) |
+
+Results: 46 new unit tests (215 / 215 total) and 137 / 137 live API checks. The Day 1–12 regression suites (193 +
+167 + 108 + 57 API checks and 59 browser checks) all passed against the Day 13 build.

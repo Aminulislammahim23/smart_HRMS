@@ -35,6 +35,8 @@ public class SmartHRMSDbContext : DbContext
 
     public DbSet<EmployeeExperience> EmployeeExperiences { get; set; }
 
+    public DbSet<Attendance> Attendances { get; set; }
+
     public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
         try

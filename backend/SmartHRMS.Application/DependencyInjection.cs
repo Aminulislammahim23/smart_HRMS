@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using smartHRMS.Application.Features.Attendances;
 using smartHRMS.Application.Features.Departments;
 using smartHRMS.Application.Features.Designations;
 using smartHRMS.Application.Features.EmployeeAddresses;
@@ -14,11 +15,17 @@ namespace smartHRMS.Application;
 public static class DependencyInjection
 {
     /// <param name="documentOptions">Upload rules for employee documents, read from configuration by the API.</param>
-    public static IServiceCollection AddApplication(this IServiceCollection services, EmployeeDocumentOptions documentOptions)
+    /// <param name="attendanceOptions">Attendance time zone and late rule, read from configuration by the API.</param>
+    public static IServiceCollection AddApplication(
+        this IServiceCollection services, EmployeeDocumentOptions documentOptions, AttendanceOptions attendanceOptions)
     {
-        // Fail at startup, not on the first upload, if the configured rules are unusable.
+        // Fail at startup, not on the first upload or check-in, if the configured rules are unusable.
         EmployeeDocumentPolicy.EnsureValid(documentOptions);
+        AttendanceClock.EnsureValid(attendanceOptions);
         services.AddSingleton(documentOptions);
+        services.AddSingleton(attendanceOptions);
+        services.AddSingleton(TimeProvider.System);
+        services.AddSingleton<AttendanceClock>();
 
         services.AddScoped<IEmployeeService, EmployeeService>();
         services.AddScoped<IEmployeeProfileService, EmployeeProfileService>();
@@ -30,6 +37,7 @@ public static class DependencyInjection
         services.AddScoped<IEmployeeExperienceService, EmployeeExperienceService>();
         services.AddScoped<IDepartmentService, DepartmentService>();
         services.AddScoped<IDesignationService, DesignationService>();
+        services.AddScoped<IAttendanceService, AttendanceService>();
 
         return services;
     }

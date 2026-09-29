@@ -1,6 +1,9 @@
 import {
   BriefcaseBusiness,
   Building2,
+  CalendarCheck,
+  CalendarOff,
+  FileText,
   LayoutDashboard,
   LogOut,
   Settings,
@@ -31,6 +34,13 @@ const NAV_SECTIONS: NavSection[] = [
     items: [
       { label: 'Employees', to: '/employees', icon: Users },
       { label: 'My Profile', to: '/profile', icon: UserCircle },
+    ],
+  },
+  {
+    title: 'Workforce',
+    items: [
+      { label: 'Attendance', to: '/attendance', icon: CalendarCheck },
+      { label: 'Documents', to: '/documents', icon: FileText },
     ],
   },
   {
@@ -71,6 +81,13 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
       </nav>
 
       <ul className="menu w-full border-t border-base-300 p-3">
+        <li className="menu-disabled">
+          <span title="Leave management needs its backend (leave types, balances, requests, approvals), which does not exist yet.">
+            <CalendarOff className="size-4" />
+            Leave
+            <span className="badge badge-ghost badge-xs">Soon</span>
+          </span>
+        </li>
         <li className="menu-disabled">
           <span title="Settings are not available yet.">
             <Settings className="size-4" />

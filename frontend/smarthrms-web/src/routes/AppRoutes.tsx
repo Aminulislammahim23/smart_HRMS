@@ -18,6 +18,12 @@ const DesignationList = lazy(() => import('../pages/designations/DesignationList
 const DesignationCreate = lazy(() => import('../pages/designations/DesignationCreate'))
 const DesignationEdit = lazy(() => import('../pages/designations/DesignationEdit'))
 const MyProfile = lazy(() => import('../pages/profile/MyProfile'))
+const DocumentListPage = lazy(() => import('../pages/documents/DocumentListPage'))
+const EmployeeDocumentsPage = lazy(() => import('../pages/documents/EmployeeDocumentsPage'))
+const DocumentDetailsPage = lazy(() => import('../pages/documents/DocumentDetailsPage'))
+const AttendanceDashboardPage = lazy(() => import('../pages/attendance/AttendanceDashboardPage'))
+const AttendanceListPage = lazy(() => import('../pages/attendance/AttendanceListPage'))
+const EmployeeAttendancePage = lazy(() => import('../pages/attendance/EmployeeAttendancePage'))
 const NotFound = lazy(() => import('../pages/NotFound'))
 
 export function AppRoutes() {
@@ -44,6 +50,14 @@ export function AppRoutes() {
           <Route path="/designations" element={<DesignationList />} />
           <Route path="/designations/create" element={<DesignationCreate />} />
           <Route path="/designations/:id/edit" element={<DesignationEdit />} />
+
+          <Route path="/documents" element={<DocumentListPage />} />
+          <Route path="/documents/:employeeId" element={<EmployeeDocumentsPage />} />
+          <Route path="/documents/:employeeId/:documentId" element={<DocumentDetailsPage />} />
+
+          <Route path="/attendance" element={<AttendanceDashboardPage />} />
+          <Route path="/attendance/records" element={<AttendanceListPage />} />
+          <Route path="/attendance/employee/:employeeId" element={<EmployeeAttendancePage />} />
 
           <Route path="/profile" element={<MyProfile />} />
           <Route path="*" element={<NotFound />} />

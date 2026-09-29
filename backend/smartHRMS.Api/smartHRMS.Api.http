@@ -4,6 +4,7 @@
 @designationId = 00000000-0000-0000-0000-000000000000
 @documentId = 00000000-0000-0000-0000-000000000000
 @recordId = 00000000-0000-0000-0000-000000000000
+@attendanceId = 00000000-0000-0000-0000-000000000000
 
 ### Health
 GET {{smartHRMS.Api_HostAddress}}/api/health
@@ -272,3 +273,61 @@ Content-Type: application/json
 
 ### Update / delete any profile record by id (replace "addresses" with the resource)
 DELETE {{smartHRMS.Api_HostAddress}}/api/employees/{{employeeId}}/addresses/{{recordId}}
+
+### ===== Attendance (Day 13) — dates "yyyy-MM-dd", times "HH:mm[:ss]" in the office time zone (Asia/Dhaka)
+
+### Check in (today, at the server's current office time; Late after 09:00 + 15 min)
+POST {{smartHRMS.Api_HostAddress}}/api/attendance/check-in
+Content-Type: application/json
+
+{
+  "employeeId": "{{employeeId}}",
+  "remarks": "On time"
+}
+
+### Check out (today; working minutes are calculated)
+POST {{smartHRMS.Api_HostAddress}}/api/attendance/check-out
+Content-Type: application/json
+
+{
+  "employeeId": "{{employeeId}}"
+}
+
+### Create a record manually (HR). status: Present, Late, Absent, HalfDay, Leave
+POST {{smartHRMS.Api_HostAddress}}/api/attendance
+Content-Type: application/json
+
+{
+  "employeeId": "{{employeeId}}",
+  "attendanceDate": "2026-09-29",
+  "status": "Present",
+  "checkInTime": "09:00",
+  "checkOutTime": "17:30",
+  "remarks": "Forgot to check in"
+}
+
+### List with filters (all optional): employeeId, date OR startDate/endDate, status
+GET {{smartHRMS.Api_HostAddress}}/api/attendance?startDate=2026-09-01&endDate=2026-09-30&status=Late
+Accept: application/json
+
+### One employee's attendance history
+GET {{smartHRMS.Api_HostAddress}}/api/employees/{{employeeId}}/attendance?startDate=2026-09-01
+Accept: application/json
+
+### Get one record
+GET {{smartHRMS.Api_HostAddress}}/api/attendance/{{attendanceId}}
+Accept: application/json
+
+### Correct a record (HR). Full update; working minutes are recalculated
+PUT {{smartHRMS.Api_HostAddress}}/api/attendance/{{attendanceId}}
+Content-Type: application/json
+
+{
+  "status": "HalfDay",
+  "checkInTime": "09:00",
+  "checkOutTime": "13:00",
+  "remarks": "Doctor's appointment"
+}
+
+### Delete a record (permanent)
+DELETE {{smartHRMS.Api_HostAddress}}/api/attendance/{{attendanceId}}
