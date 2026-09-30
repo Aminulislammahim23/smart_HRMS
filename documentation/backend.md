@@ -636,9 +636,13 @@ Before each schema change since Day 9 a verified copy-only backup was taken
 domain change; applied migrations are never edited.
 
 > **Windows Smart App Control:** on this machine a freshly built, unsigned `smartHRMS.*.dll` can be blocked
-> ("An Application Control policy has blocked this file") by `dotnet run` and `dotnet ef`. Rebuilding with
-> `dotnet build smartHRMS.slnx -p:Deterministic=false` gives the DLL a new hash, which is often enough. On Day 13 the
-> rebuilt `smartHRMS.Api/bin/Debug/.../smartHRMS.Api.dll` stayed blocked through 10 rebuilds while an identical build
+> ("An Application Control policy has blocked this file") by `dotnet run` and `dotnet ef`. Windows remembers the
+> verdict per file hash, and deterministic builds reproduce the same hash, so `backend/Directory.Build.props` turns
+> deterministic builds off for non-Release builds: every rebuild now gets a new hash (about 3 in 4 fresh builds
+> loaded when tested). Start the API with **`.\run-api.ps1`** (from `backend`), which runs `dotnet run` and, if the
+> build is blocked, rebuilds (`dotnet build smartHRMS.Api --no-incremental`) and retries. Before this file existed,
+> `dotnet run` silently rebuilt a `-p:Deterministic=false` build back to the blocked deterministic hash; on Day 13 the
+> `smartHRMS.Api/bin/Debug/.../smartHRMS.Api.dll` stayed blocked through 10 rebuilds while an identical build
 > in another folder (`dotnet build smartHRMS.Api -p:Deterministic=false -o <folder>`) ran fine. The migration was
 > generated and applied from that build by running EF's `ef.dll` with `--startup-assembly <folder>\smartHRMS.Api.dll`
 > and `-- --contentRoot <path to smartHRMS.Api>` (the same command `dotnet ef ... --verbose` prints).
@@ -704,7 +708,7 @@ Development-only: `GET /openapi/v1.json` (OpenAPI document) and `/swagger` (Swag
 ```bash
 cd backend
 dotnet restore
-dotnet build smartHRMS.slnx          # add -p:Deterministic=false if Smart App Control blocks the DLL
+dotnet build smartHRMS.slnx          # if Smart App Control blocks the DLL: add --no-incremental (new hash, see §20)
 dotnet test smartHRMS.slnx
 dotnet ef migrations has-pending-model-changes --project SmartHRMS.Infrastructure --startup-project smartHRMS.Api
 ```

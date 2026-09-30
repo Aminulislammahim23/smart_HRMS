@@ -1,0 +1,11 @@
+<Project>
+  <!--
+    Smart App Control on this machine blocks some locally built DLLs, and remembers the verdict for each file hash.
+    Deterministic builds reproduce the same (blocked) hash on every rebuild, so Debug builds are made non-deterministic:
+    if a build is ever blocked, a clean rebuild (dotnet build with the no-incremental option) produces a fresh hash. Release builds are unaffected.
+  -->
+  <!-- Configuration is still empty here when it is not passed explicitly (the SDK defaults it to Debug later). -->
+  <PropertyGroup Condition="'$(Configuration)' != 'Release'">
+    <Deterministic>false</Deterministic>
+  </PropertyGroup>
+</Project>
