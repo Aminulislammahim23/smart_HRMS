@@ -1,4 +1,4 @@
-import { BadgeCheck, Ban, Calculator, Send, Trash2, Wallet } from 'lucide-react'
+import { BadgeCheck, Ban, Calculator, FileStack, Send, Trash2, Wallet } from 'lucide-react'
 import type { PayrollPeriod } from '../../types/payroll'
 import type { PayrollAction } from './usePayrollActions'
 
@@ -7,6 +7,7 @@ const BUTTONS: { action: PayrollAction; label: string; icon: typeof Calculator; 
   { action: 'submit', label: 'Submit for approval', icon: Send, className: 'btn-primary', allowed: (p) => p.actions.canSubmit },
   { action: 'approve', label: 'Approve', icon: BadgeCheck, className: 'btn-success', allowed: (p) => p.actions.canApprove },
   { action: 'markPaid', label: 'Mark as paid', icon: Wallet, className: 'btn-success', allowed: (p) => p.actions.canMarkPaid },
+  { action: 'generatePayslips', label: 'Generate payslips', icon: FileStack, className: 'btn-primary', allowed: (p) => p.actions.canGeneratePayslips },
   { action: 'cancel', label: 'Cancel payroll', icon: Ban, className: 'btn-ghost text-error', allowed: (p) => p.actions.canCancel },
   { action: 'delete', label: 'Delete', icon: Trash2, className: 'btn-ghost text-error', allowed: (p) => p.actions.canDelete },
 ]

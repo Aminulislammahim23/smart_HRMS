@@ -29,6 +29,7 @@ const schema = z.object({
   transportAllowance: amount,
   otherAllowance: amount,
   monthlyTax: amount,
+  monthlyProvidentFund: amount,
 })
 type FormInput = z.input<typeof schema>
 type FormOutput = z.output<typeof schema>
@@ -40,6 +41,7 @@ const FIELDS: { name: keyof FormOutput; label: string }[] = [
   { name: 'transportAllowance', label: 'Transport allowance' },
   { name: 'otherAllowance', label: 'Other allowance' },
   { name: 'monthlyTax', label: 'Monthly tax' },
+  { name: 'monthlyProvidentFund', label: 'Provident fund (monthly)' },
 ]
 
 function SalaryModal({ structure, onClose, onSaved }: { structure: SalaryStructure; onClose: () => void; onSaved: () => void }) {
@@ -58,6 +60,7 @@ function SalaryModal({ structure, onClose, onSaved }: { structure: SalaryStructu
       transportAllowance: structure.transportAllowance,
       otherAllowance: structure.otherAllowance,
       monthlyTax: structure.monthlyTax,
+      monthlyProvidentFund: structure.monthlyProvidentFund,
     },
   })
 
@@ -76,7 +79,7 @@ function SalaryModal({ structure, onClose, onSaved }: { structure: SalaryStructu
   return (
     <Modal open title={`Salary — ${structure.employeeName}`} onClose={onClose} busy={isSubmitting}>
       <form className="flex flex-col gap-3" onSubmit={submit} noValidate>
-        <p className="text-sm text-base-content/70">Monthly amounts. Payroll that is already calculated keeps its numbers until it is recalculated.</p>
+        <p className="text-sm text-base-content/70">Monthly amounts; tax and provident fund are withheld from salary. Payroll that is already calculated keeps its numbers until it is recalculated.</p>
         {error !== null && <ApiErrorAlert error={error} />}
         <div className="grid gap-3 sm:grid-cols-2">
           {FIELDS.map(({ name, label }) => (
@@ -143,7 +146,7 @@ export default function SalaryStructuresPage() {
       className: 'hidden md:table-cell text-right',
       render: (s) => <span className="tabular-nums">{formatAmount(s.houseRent + s.medicalAllowance + s.transportAllowance + s.otherAllowance)}</span>,
     },
-    { key: 'tax', header: 'Tax', className: 'hidden sm:table-cell text-right', render: (s) => <span className="tabular-nums">{formatAmount(s.monthlyTax)}</span> },
+    { key: 'tax', header: 'Tax + PF', className: 'hidden sm:table-cell text-right', render: (s) => <span className="tabular-nums">{formatAmount(s.monthlyTax + s.monthlyProvidentFund)}</span> },
     { key: 'gross', header: 'Monthly gross', className: 'text-right', render: (s) => <span className="font-semibold tabular-nums">{formatAmount(s.monthlyGross)}</span> },
     {
       key: 'actions',

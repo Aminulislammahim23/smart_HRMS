@@ -1,12 +1,12 @@
 import { useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useToast } from '../../hooks/useToast'
-import { approvePayroll, calculatePayroll, cancelPayroll, deletePayrollPeriod, markPayrollPaid, submitPayroll } from '../../services/payrollService'
+import { approvePayroll, calculatePayroll, cancelPayroll, deletePayrollPeriod, generatePayslips, markPayrollPaid, submitPayroll } from '../../services/payrollService'
 import type { PayrollCalculationResult, PayrollPeriod } from '../../types/payroll'
 import { formatAmount } from '../../utils/formatters'
 import { ConfirmDialog } from '../common/ConfirmDialog'
 
-export type PayrollAction = 'calculate' | 'submit' | 'approve' | 'markPaid' | 'cancel' | 'delete'
+export type PayrollAction = 'calculate' | 'submit' | 'approve' | 'markPaid' | 'cancel' | 'delete' | 'generatePayslips'
 
 interface ActionText {
   title: string
@@ -32,13 +32,14 @@ const TEXT: Record<PayrollAction, ActionText> = {
   },
   approve: {
     title: 'Approve payroll?',
-    message: (p) => `Approve ${p.name}: ${p.employeeCount} employees, net total ${formatAmount(p.netTotal)}. Approved payroll can't be edited, recalculated or cancelled, and employees can see their payslips.`,
+    message: (p) => `Approve ${p.name}: ${p.employeeCount} employees, net total ${formatAmount(p.netTotal)}. Payslips are issued to every employee at approval. Approved payroll can't be edited, recalculated or cancelled.`,
     confirmLabel: 'Approve',
     tone: 'primary',
   },
   markPaid: {
     title: 'Mark as paid?',
-    message: (p) => `Confirm that ${p.name} (net ${formatAmount(p.netTotal)}) has been paid. This is final.`,
+    message: (p) =>
+      `Record today as the payment date of every unpaid payslip of ${p.name} (net ${formatAmount(p.netTotal)}). Payslips already paid keep their own date. This is final.`,
     confirmLabel: 'Mark as paid',
     tone: 'primary',
   },
@@ -47,6 +48,12 @@ const TEXT: Record<PayrollAction, ActionText> = {
     message: (p) => `Cancel ${p.name}? Its records are kept for history but it can't be processed any more. A new period with the same dates can be created afterwards.`,
     confirmLabel: 'Cancel payroll',
     tone: 'danger',
+  },
+  generatePayslips: {
+    title: 'Generate payslips?',
+    message: (p) => `Issue the missing payslips of ${p.name} from its approved payroll records.`,
+    confirmLabel: 'Generate',
+    tone: 'primary',
   },
   delete: {
     title: 'Delete payroll period?',
@@ -86,8 +93,13 @@ export function usePayrollActions(onDone: (result?: PayrollCalculationResult) =>
         break
       case 'markPaid':
         await markPayrollPaid(period.id)
-        notify('success', `${period.name} marked as paid.`)
+        notify('success', `Payment of ${period.name} recorded.`)
         break
+      case 'generatePayslips': {
+        const result = await generatePayslips(period.id)
+        notify('success', `${result.generated} payslips generated.`)
+        break
+      }
       case 'cancel':
         await cancelPayroll(period.id, null)
         notify('success', `${period.name} cancelled.`)

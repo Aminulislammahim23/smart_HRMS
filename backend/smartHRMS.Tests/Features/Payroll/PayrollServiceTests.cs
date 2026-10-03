@@ -1,5 +1,6 @@
 using smartHRMS.Application.Common.Calendar;
 using smartHRMS.Application.Common.Exceptions;
+using smartHRMS.Application.Features.Attendances;
 using smartHRMS.Application.Features.Payroll;
 using smartHRMS.Application.Features.Payroll.Dtos;
 using smartHRMS.Domain.Entities;
@@ -26,6 +27,8 @@ public class PayrollServiceTests
         public FakeCurrentUser User { get; } = FakeCurrentUser.As(UserRole.HR);
         public PayrollOptions Options { get; } = new() { CompanyName = "Test Co", CompanyAddress = "Dhaka" };
         public PayrollService Service { get; }
+        public PayslipService Payslips { get; }
+        public FakeTimeProvider Clock { get; } = new(new DateTimeOffset(2026, 11, 5, 6, 0, 0, TimeSpan.Zero));
 
         public Employee Alice { get; }
         public Employee Bob { get; }
@@ -43,8 +46,10 @@ public class PayrollServiceTests
             NoSalary = AddEmployee("EMP-003", "Nosal", null, null);
             Resigned = AddEmployee("EMP-004", "Gone", 30000, null, EmployeeStatus.Resigned);
 
+            var clock = new AttendanceClock(Clock, new AttendanceOptions());
             Service = new PayrollService(Payroll, Employees, Attendance, Leave, Users, Audit, User,
-                new WorkCalendar(new WorkCalendarOptions { WeekendDays = ["Friday", "Saturday"] }), Options);
+                new WorkCalendar(new WorkCalendarOptions { WeekendDays = ["Friday", "Saturday"] }), Options, clock);
+            Payslips = new PayslipService(Payroll, Employees, Users, Audit, User, Options, clock);
         }
 
         public Employee AddEmployee(string code, string name, decimal? basic, EmployeeSalaryStructure? structure, EmployeeStatus status = EmployeeStatus.Active, DateTime? joined = null)
@@ -173,7 +178,7 @@ public class PayrollServiceTests
         await Assert.ThrowsAsync<ForbiddenException>(() => s.Service.GetRecordsAsync(period.Id, new PayrollRecordQueryDto(), CancellationToken.None));
         await Assert.ThrowsAsync<ForbiddenException>(() => s.Service.SubmitAsync(period.Id, CancellationToken.None));
         await Assert.ThrowsAsync<ForbiddenException>(() => s.Service.ApproveAsync(period.Id, CancellationToken.None));
-        await Assert.ThrowsAsync<ForbiddenException>(() => s.Service.MarkPaidAsync(period.Id, CancellationToken.None));
+        await Assert.ThrowsAsync<ForbiddenException>(() => s.Service.MarkPaidAsync(period.Id, new RecordPaymentDto(), CancellationToken.None));
     }
 
     // ---- calculation ----
@@ -344,7 +349,7 @@ public class PayrollServiceTests
         Assert.NotNull(approved.ApprovedAt);
         Assert.All(s.Payroll.Records, r => Assert.Equal(PayrollRecordStatus.Approved, r.Status));
 
-        var paid = await s.Service.MarkPaidAsync(id, CancellationToken.None);
+        var paid = await s.Service.MarkPaidAsync(id, new RecordPaymentDto(), CancellationToken.None);
         Assert.Equal("Paid", paid.Status);
         Assert.NotNull(paid.PaidAt);
         Assert.All(s.Payroll.Records, r => Assert.Equal(PayrollRecordStatus.Paid, r.Status));
@@ -369,9 +374,9 @@ public class PayrollServiceTests
         var id = await s.CalculatedOctoberAsync();
         s.User.SignInAs(UserRole.Admin);
 
-        await Assert.ThrowsAsync<ConflictException>(() => s.Service.MarkPaidAsync(id, CancellationToken.None));
+        await Assert.ThrowsAsync<ConflictException>(() => s.Service.MarkPaidAsync(id, new RecordPaymentDto(), CancellationToken.None));
         await s.Service.SubmitAsync(id, CancellationToken.None);
-        await Assert.ThrowsAsync<ConflictException>(() => s.Service.MarkPaidAsync(id, CancellationToken.None));
+        await Assert.ThrowsAsync<ConflictException>(() => s.Service.MarkPaidAsync(id, new RecordPaymentDto(), CancellationToken.None));
     }
 
     [Fact]
@@ -415,11 +420,11 @@ public class PayrollServiceTests
     {
         var s = new Setup();
         var id = await s.ApprovedOctoberAsync();
-        await s.Service.MarkPaidAsync(id, CancellationToken.None);
+        await s.Service.MarkPaidAsync(id, new RecordPaymentDto(), CancellationToken.None);
 
         await Assert.ThrowsAsync<ConflictException>(() => s.Service.UpdateRecordAsync(s.RecordOf(s.Alice).Id, new UpdatePayrollRecordDto { Bonus = 1 }, CancellationToken.None));
         await Assert.ThrowsAsync<ConflictException>(() => s.Service.CalculateAsync(id, CancellationToken.None));
-        await Assert.ThrowsAsync<ConflictException>(() => s.Service.MarkPaidAsync(id, CancellationToken.None));
+        await Assert.ThrowsAsync<ConflictException>(() => s.Service.MarkPaidAsync(id, new RecordPaymentDto(), CancellationToken.None));
     }
 
     [Fact]
@@ -469,7 +474,7 @@ public class PayrollServiceTests
         s.User.SignInAs(UserRole.Employee, s.Alice.Id);
 
         await Assert.ThrowsAsync<NotFoundException>(() => s.Service.GetRecordAsync(bobRecord.Id, CancellationToken.None));
-        await Assert.ThrowsAsync<NotFoundException>(() => s.Service.GetPayslipAsync(bobRecord.Id, CancellationToken.None));
+        await Assert.ThrowsAsync<NotFoundException>(() => s.Payslips.GetByRecordAsync(bobRecord.Id, CancellationToken.None));
         await Assert.ThrowsAsync<ForbiddenException>(() => s.Service.GetEmployeeHistoryAsync(s.Bob.Id, CancellationToken.None));
     }
 
@@ -483,7 +488,7 @@ public class PayrollServiceTests
         s.User.SignInAs(UserRole.Manager, s.Alice.Id);
 
         await Assert.ThrowsAsync<ForbiddenException>(() => s.Service.GetEmployeeHistoryAsync(s.Bob.Id, CancellationToken.None));
-        await Assert.ThrowsAsync<NotFoundException>(() => s.Service.GetPayslipAsync(s.RecordOf(s.Bob).Id, CancellationToken.None));
+        await Assert.ThrowsAsync<NotFoundException>(() => s.Payslips.GetByRecordAsync(s.RecordOf(s.Bob).Id, CancellationToken.None));
     }
 
     [Fact]
@@ -493,7 +498,7 @@ public class PayrollServiceTests
         await s.ApprovedOctoberAsync();
         s.User.SignInAs(UserRole.Employee, s.Alice.Id);
 
-        var payslip = await s.Service.GetPayslipAsync(s.RecordOf(s.Alice).Id, CancellationToken.None);
+        var payslip = await s.Payslips.GetByRecordAsync(s.RecordOf(s.Alice).Id, CancellationToken.None);
 
         Assert.Equal("Test Co", payslip.CompanyName);
         Assert.Equal("EMP-001", payslip.EmployeeCode);
@@ -505,7 +510,9 @@ public class PayrollServiceTests
         Assert.Equal(payslip.GrossSalary, payslip.Earnings.Sum(l => l.Amount));
         Assert.Equal(payslip.TotalDeduction, payslip.Deductions.Sum(l => l.Amount));
         Assert.Contains(payslip.Earnings, l => l.Label == "House rent" && l.Amount == 10500m);
-        Assert.Equal("Approved", payslip.PaymentStatus);
+        Assert.Equal("Approved", payslip.PayrollStatus);
+        Assert.Equal("Unpaid", payslip.PaymentStatus);
+        Assert.NotNull(payslip.PayslipNumber);
         Assert.True(payslip.IsFinal);
         Assert.Contains(s.Audit.Entries, e => e.Action == "PayslipViewed");
     }

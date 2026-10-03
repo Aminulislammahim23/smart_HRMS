@@ -22,11 +22,13 @@ public class PayrollController : ControllerBase
 {
     private readonly IPayrollService _payrollService;
     private readonly ISalaryStructureService _salaryService;
+    private readonly IPayslipService _payslipService;
 
-    public PayrollController(IPayrollService payrollService, ISalaryStructureService salaryService)
+    public PayrollController(IPayrollService payrollService, ISalaryStructureService salaryService, IPayslipService payslipService)
     {
         _payrollService = payrollService;
         _salaryService = salaryService;
+        _payslipService = payslipService;
     }
 
     // ---- periods ----
@@ -169,15 +171,15 @@ public class PayrollController : ControllerBase
         return Ok(ApiResponse<PayrollPeriodDto>.Ok(period, "Payroll approved."));
     }
 
-    /// <summary>Approved → Paid (Admin).</summary>
+    /// <summary>Approved → Paid (Admin): records payment of every unpaid payslip; paymentDate defaults to today.</summary>
     [Authorize(Policy = Policies.Admin)]
     [HttpPost("{periodId:guid}/mark-paid")]
     [ProducesResponseType(typeof(ApiResponse<PayrollPeriodDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status409Conflict)]
-    public async Task<ActionResult<ApiResponse<PayrollPeriodDto>>> MarkPaid(Guid periodId, CancellationToken cancellationToken)
+    public async Task<ActionResult<ApiResponse<PayrollPeriodDto>>> MarkPaid(Guid periodId, RecordPaymentDto? dto, CancellationToken cancellationToken)
     {
-        var period = await _payrollService.MarkPaidAsync(periodId, cancellationToken);
+        var period = await _payrollService.MarkPaidAsync(periodId, dto ?? new RecordPaymentDto(), cancellationToken);
         return Ok(ApiResponse<PayrollPeriodDto>.Ok(period, "Payroll marked as paid."));
     }
 
@@ -205,14 +207,118 @@ public class PayrollController : ControllerBase
         return Ok(ApiResponse<List<PayrollRecordDto>>.Ok(records, "Payroll history retrieved successfully."));
     }
 
-    /// <summary>Payslip for one record: HR/Admin (also previews), or the employee once Approved or Paid.</summary>
+    /// <summary>Payslip for one payroll record: HR/Admin (also previews), or the employee once the payslip is issued.</summary>
     [HttpGet("payslip/{recordId:guid}")]
     [ProducesResponseType(typeof(ApiResponse<PayslipDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
     public async Task<ActionResult<ApiResponse<PayslipDto>>> GetPayslip(Guid recordId, CancellationToken cancellationToken)
     {
-        var payslip = await _payrollService.GetPayslipAsync(recordId, cancellationToken);
+        var payslip = await _payslipService.GetByRecordAsync(recordId, cancellationToken);
         return Ok(ApiResponse<PayslipDto>.Ok(payslip, "Payslip retrieved successfully."));
+    }
+
+    // ---- payroll history and payslips (Day 17) ----
+
+    /// <summary>
+    /// Payroll history: every record with its payslip and payment (HR/Admin). Filters: employeeId, departmentId, month,
+    /// year, status, paymentStatus, search; paging: page, pageSize (≤ 100); sortBy (period, employee, gross, net,
+    /// paymentDate), sortDirection (asc, desc).
+    /// </summary>
+    [Authorize(Policy = Policies.HrOrAdmin)]
+    [HttpGet("history")]
+    [ProducesResponseType(typeof(ApiResponse<PagedResult<PayrollRecordDto>>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<ApiResponse<PagedResult<PayrollRecordDto>>>> GetHistory([FromQuery] PayrollHistoryQueryDto query, CancellationToken cancellationToken)
+    {
+        var page = await _payslipService.GetHistoryAsync(query, cancellationToken);
+        return Ok(ApiResponse<PagedResult<PayrollRecordDto>>.Ok(page, "Payroll history retrieved successfully."));
+    }
+
+    /// <summary>Issued payslips (HR/Admin), with the same filters, paging and sorting as the history.</summary>
+    [Authorize(Policy = Policies.HrOrAdmin)]
+    [HttpGet("payslips")]
+    [ProducesResponseType(typeof(ApiResponse<PagedResult<PayrollRecordDto>>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<ApiResponse<PagedResult<PayrollRecordDto>>>> GetPayslips([FromQuery] PayrollHistoryQueryDto query, CancellationToken cancellationToken)
+    {
+        var page = await _payslipService.GetPayslipsAsync(query, cancellationToken);
+        return Ok(ApiResponse<PagedResult<PayrollRecordDto>>.Ok(page, "Payslips retrieved successfully."));
+    }
+
+    /// <summary>One payslip by its id: HR/Admin, or the employee it belongs to (404 for anyone else).</summary>
+    [HttpGet("payslips/{id:guid}")]
+    [ProducesResponseType(typeof(ApiResponse<PayslipDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<ApiResponse<PayslipDto>>> GetPayslipById(Guid id, CancellationToken cancellationToken)
+    {
+        var payslip = await _payslipService.GetByIdAsync(id, cancellationToken);
+        return Ok(ApiResponse<PayslipDto>.Ok(payslip, "Payslip retrieved successfully."));
+    }
+
+    /// <summary>Issues the missing payslips of an Approved or Paid payroll (HR/Admin); refused for unapproved payroll.</summary>
+    [Authorize(Policy = Policies.HrOrAdmin)]
+    [HttpPost("{periodId:guid}/payslips")]
+    [ProducesResponseType(typeof(ApiResponse<PayslipGenerationResultDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<ApiResponse<PayslipGenerationResultDto>>> GeneratePayslips(Guid periodId, CancellationToken cancellationToken)
+    {
+        var result = await _payslipService.GenerateAsync(periodId, cancellationToken);
+        return Ok(ApiResponse<PayslipGenerationResultDto>.Ok(result, $"{result.Generated} payslips generated."));
+    }
+
+    /// <summary>Records the salary payment of one payslip (Admin); paymentDate defaults to today and can't be in the future.</summary>
+    [Authorize(Policy = Policies.Admin)]
+    [HttpPost("payslips/{id:guid}/mark-paid")]
+    [ProducesResponseType(typeof(ApiResponse<PayslipDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<ApiResponse<PayslipDto>>> MarkPayslipPaid(Guid id, RecordPaymentDto? dto, CancellationToken cancellationToken)
+    {
+        var payslip = await _payslipService.RecordPaymentAsync(id, dto ?? new RecordPaymentDto(), cancellationToken);
+        return Ok(ApiResponse<PayslipDto>.Ok(payslip, "Payment recorded."));
+    }
+
+    /// <summary>One employee's payslips: HR/Admin, or the employee themself (403 for anyone else).</summary>
+    [HttpGet("employee/{employeeId:guid}/payslips")]
+    [ProducesResponseType(typeof(ApiResponse<PagedResult<PayrollRecordDto>>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<ApiResponse<PagedResult<PayrollRecordDto>>>> GetEmployeePayslips(Guid employeeId, [FromQuery] PayrollHistoryQueryDto query, CancellationToken cancellationToken)
+    {
+        var page = await _payslipService.GetEmployeePayslipsAsync(employeeId, query, cancellationToken);
+        return Ok(ApiResponse<PagedResult<PayrollRecordDto>>.Ok(page, "Payslips retrieved successfully."));
+    }
+
+    /// <summary>The signed-in employee's payslips. The employee comes from the token; employeeId in the query is ignored.</summary>
+    [HttpGet("me/payslips")]
+    [ProducesResponseType(typeof(ApiResponse<PagedResult<PayrollRecordDto>>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<ApiResponse<PagedResult<PayrollRecordDto>>>> GetMyPayslips([FromQuery] PayrollHistoryQueryDto query, CancellationToken cancellationToken)
+    {
+        var page = await _payslipService.GetMyPayslipsAsync(query, cancellationToken);
+        return Ok(ApiResponse<PagedResult<PayrollRecordDto>>.Ok(page, "Payslips retrieved successfully."));
+    }
+
+    /// <summary>The signed-in employee's latest payslip (404 while none has been issued).</summary>
+    [HttpGet("me/payslips/current")]
+    [ProducesResponseType(typeof(ApiResponse<PayslipDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<ApiResponse<PayslipDto>>> GetMyCurrentPayslip(CancellationToken cancellationToken)
+    {
+        var payslip = await _payslipService.GetMyCurrentPayslipAsync(cancellationToken);
+        return Ok(ApiResponse<PayslipDto>.Ok(payslip, "Payslip retrieved successfully."));
+    }
+
+    /// <summary>The signed-in employee's salary payments (paid payslips), newest payment first.</summary>
+    [HttpGet("me/payments")]
+    [ProducesResponseType(typeof(ApiResponse<PagedResult<PayrollRecordDto>>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<ApiResponse<PagedResult<PayrollRecordDto>>>> GetMyPayments([FromQuery] PayrollHistoryQueryDto query, CancellationToken cancellationToken)
+    {
+        var page = await _payslipService.GetMyPaymentsAsync(query, cancellationToken);
+        return Ok(ApiResponse<PagedResult<PayrollRecordDto>>.Ok(page, "Payment history retrieved successfully."));
     }
 
     // ---- salary structures ----

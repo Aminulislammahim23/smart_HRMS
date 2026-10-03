@@ -30,6 +30,9 @@ public class SalaryStructureDto
 
     public decimal MonthlyTax { get; set; }
 
+    /// <summary>Monthly provident fund contribution (employee share), withheld from salary.</summary>
+    public decimal MonthlyProvidentFund { get; set; }
+
     /// <summary>Basic + all allowances (before tax and deductions).</summary>
     public decimal? MonthlyGross { get; set; }
 
@@ -58,4 +61,7 @@ public class UpdateSalaryStructureDto
 
     [Range(typeof(decimal), "0", Max, ParseLimitsInInvariantCulture = true, ConvertValueInInvariantCulture = true, ErrorMessage = "The MonthlyTax field must be 0 or more.")]
     public decimal MonthlyTax { get; set; }
+
+    [Range(typeof(decimal), "0", Max, ParseLimitsInInvariantCulture = true, ConvertValueInInvariantCulture = true, ErrorMessage = "The MonthlyProvidentFund field must be 0 or more.")]
+    public decimal MonthlyProvidentFund { get; set; }
 }

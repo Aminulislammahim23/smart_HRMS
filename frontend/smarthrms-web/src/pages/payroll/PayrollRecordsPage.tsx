@@ -144,7 +144,7 @@ export default function PayrollRecordsPage() {
           ) : (
             <>
               <p className="text-sm text-base-content/60">{rows.length} records</p>
-              <PayrollRecordTable records={pagination.pageItems} onView={setViewing} onEdit={setEditing} />
+              <PayrollRecordTable records={pagination.pageItems} onView={setViewing} onEdit={setEditing} showPayment />
               <Pagination
                 page={pagination.page}
                 pageCount={pagination.pageCount}

@@ -18,4 +18,7 @@ public class EmployeeSalaryStructure : EmployeeOwnedEntity
 
     /// <summary>Fixed monthly tax withheld (no tax-slab calculation).</summary>
     public decimal MonthlyTax { get; set; }
+
+    /// <summary>Fixed monthly provident fund contribution withheld from salary (employee share).</summary>
+    public decimal MonthlyProvidentFund { get; set; }
 }

@@ -74,6 +74,14 @@ export default function PayrollPeriodDetailsPage() {
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-sm text-base-content/60">Status</span>
               <PayrollStatusBadge status={period.status} />
+              {period.payslipCount > 0 && (
+                <Link
+                  to={`/payroll/payslips?year=${period.startDate.slice(0, 4)}&month=${Number(period.startDate.slice(5, 7))}`}
+                  className="badge badge-sm badge-soft badge-success"
+                >
+                  {period.payslipCount} payslips · {period.paidPayslipCount} paid
+                </Link>
+              )}
               {period.needsReviewCount > 0 && (
                 <Link to={`/payroll/${period.id}/records?status=NeedsReview`} className="badge badge-sm badge-soft badge-error gap-1">
                   <AlertTriangle className="size-3" /> {period.needsReviewCount} need review

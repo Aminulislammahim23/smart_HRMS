@@ -112,6 +112,52 @@ public class FakePayrollRepository : IPayrollRepository
         return Task.FromResult(query.OrderByDescending(r => r.PayrollPeriod!.StartDate).ThenBy(r => r.EmployeeCode).ToList());
     }
 
+    public IEnumerable<Payslip> Payslips => Records.Where(r => r.Payslip is not null).Select(r => r.Payslip!);
+
+    public Task<(List<PayrollRecord> Items, int TotalCount)> SearchHistoryAsync(PayrollHistoryFilter filter, PageRequest page, CancellationToken cancellationToken)
+    {
+        var query = Records.AsEnumerable();
+        if (filter.EmployeeId is not null) query = query.Where(r => r.EmployeeId == filter.EmployeeId);
+        if (filter.DepartmentId is not null) query = query.Where(r => _employees.Employees.Any(e => e.Id == r.EmployeeId && e.DepartmentId == filter.DepartmentId));
+        if (filter.Year is not null) query = query.Where(r => r.PayrollPeriod!.StartDate.Year == filter.Year);
+        if (filter.Month is not null) query = query.Where(r => r.PayrollPeriod!.StartDate.Month == filter.Month);
+        if (filter.PeriodStatus is not null) query = query.Where(r => r.PayrollPeriod!.Status == filter.PeriodStatus);
+        if (filter.OnlyWithPayslip) query = query.Where(r => r.Payslip is not null);
+        if (filter.PaymentStatus is not null) query = query.Where(r => r.Payslip?.PaymentStatus == filter.PaymentStatus);
+        if (filter.Search is not null) query = query.Where(r => r.EmployeeCode.Contains(filter.Search, StringComparison.OrdinalIgnoreCase) || r.EmployeeName.Contains(filter.Search, StringComparison.OrdinalIgnoreCase));
+
+        var list = query.ToList();
+        IEnumerable<PayrollRecord> ordered = page.SortBy switch
+        {
+            PayrollHistorySort.Employee => list.OrderBy(r => r.EmployeeName),
+            PayrollHistorySort.Gross => list.OrderBy(r => r.GrossSalary),
+            PayrollHistorySort.Net => list.OrderBy(r => r.NetSalary),
+            PayrollHistorySort.PaymentDate => list.OrderBy(r => r.Payslip?.PaymentDate),
+            _ => list.OrderBy(r => r.PayrollPeriod!.StartDate),
+        };
+        if (page.Descending) ordered = ordered.Reverse();
+
+        return Task.FromResult((ordered.Skip((page.Page - 1) * page.PageSize).Take(page.PageSize).ToList(), list.Count));
+    }
+
+    public Task<Payslip?> GetPayslipAsync(Guid id, CancellationToken cancellationToken) =>
+        Task.FromResult(Payslips.FirstOrDefault(p => p.Id == id));
+
+    public Task<Dictionary<Guid, PayslipCounts>> GetPayslipCountsAsync(IReadOnlyCollection<Guid> periodIds, CancellationToken cancellationToken) =>
+        Task.FromResult(Payslips
+            .Where(p => periodIds.Contains(p.PayrollPeriodId))
+            .GroupBy(p => p.PayrollPeriodId)
+            .ToDictionary(g => g.Key, g => new PayslipCounts(g.Count(), g.Count(p => p.PaymentStatus == PaymentStatus.Paid))));
+
+    public List<Payslip> AddedPayslips { get; } = new();
+
+    public Task AddPayslipAsync(Payslip payslip, CancellationToken cancellationToken)
+    {
+        // The issuer already attached it to its record (as EF does through the navigation).
+        AddedPayslips.Add(payslip);
+        return Task.CompletedTask;
+    }
+
     public Task AddPeriodAsync(PayrollPeriod period, CancellationToken cancellationToken)
     {
         Periods.Add(period);

@@ -7,13 +7,13 @@ using smartHRMS.Domain.Enums;
 namespace smartHRMS.Application.Features.Payroll;
 
 /// <summary>An employee's fixed monthly salary as configured (before proration).</summary>
-public sealed record SalaryInput(decimal BasicSalary, decimal HouseRent, decimal MedicalAllowance, decimal TransportAllowance, decimal OtherAllowance, decimal MonthlyTax);
+public sealed record SalaryInput(decimal BasicSalary, decimal HouseRent, decimal MedicalAllowance, decimal TransportAllowance, decimal OtherAllowance, decimal MonthlyTax, decimal MonthlyProvidentFund = 0);
 
 /// <summary>Day counts for one employee in one period. Only working days are counted; half days count 0.5.</summary>
 public sealed record AttendanceSummary(int PeriodWorkingDays, int EmployedWorkingDays, decimal PresentDays, decimal PaidLeaveDays, decimal UnpaidLeaveDays, decimal AbsentDays);
 
 /// <summary>The calculated (not manually entered) amounts of a payroll record.</summary>
-public sealed record FixedAmounts(decimal BasicSalary, decimal HouseRent, decimal MedicalAllowance, decimal TransportAllowance, decimal OtherAllowance, decimal Tax, decimal LeaveDeduction);
+public sealed record FixedAmounts(decimal BasicSalary, decimal HouseRent, decimal MedicalAllowance, decimal TransportAllowance, decimal OtherAllowance, decimal Tax, decimal LeaveDeduction, decimal ProvidentFund = 0);
 
 /// <summary>
 /// Pure payroll arithmetic (decimal only, no database), so every formula can be unit tested.
@@ -25,7 +25,7 @@ public sealed record FixedAmounts(decimal BasicSalary, decimal HouseRent, decima
 ///   prorated basic.
 /// Totals:
 ///   GrossSalary    = Basic + HouseRent + Medical + Transport + OtherAllowance + Overtime + Bonus
-///   TotalDeduction = Tax + LeaveDeduction + Advance + Loan + OtherDeduction
+///   TotalDeduction = Tax + ProvidentFund + LeaveDeduction + Advance + Loan + OtherDeduction
 ///   NetSalary      = GrossSalary − TotalDeduction
 /// Every amount is rounded to 2 decimals (half away from zero) when it is produced.
 /// </summary>
@@ -52,7 +52,8 @@ public static class PayrollCalculator
             Round(salary.TransportAllowance * factor),
             Round(salary.OtherAllowance * factor),
             Round(salary.MonthlyTax * factor),
-            leaveDeduction);
+            leaveDeduction,
+            Round(salary.MonthlyProvidentFund * factor));
     }
 
     /// <summary>Recomputes gross, total deduction and net, and flags a negative net salary for review.</summary>
@@ -60,7 +61,7 @@ public static class PayrollCalculator
     {
         record.GrossSalary = Round(record.BasicSalary + record.HouseRent + record.MedicalAllowance + record.TransportAllowance
             + record.OtherAllowance + record.OvertimeAmount + record.Bonus);
-        record.TotalDeduction = Round(record.Tax + record.LeaveDeduction + record.AdvanceDeduction + record.LoanDeduction + record.OtherDeduction);
+        record.TotalDeduction = Round(record.Tax + record.ProvidentFund + record.LeaveDeduction + record.AdvanceDeduction + record.LoanDeduction + record.OtherDeduction);
         record.NetSalary = Round(record.GrossSalary - record.TotalDeduction);
         record.Status = record.NetSalary < 0 ? PayrollRecordStatus.NeedsReview : PayrollRecordStatus.Calculated;
     }

@@ -4,7 +4,9 @@ import {
   CalendarCheck,
   CalendarDays,
   ClipboardCheck,
+  FileStack,
   FileText,
+  History,
   Landmark,
   LayoutDashboard,
   LogOut,
@@ -65,6 +67,8 @@ const NAV_SECTIONS: NavSection[] = [
     items: [
       { label: 'Payroll dashboard', to: '/payroll', icon: Wallet, roles: HR, end: true },
       { label: 'Payroll periods', to: '/payroll/periods', icon: Landmark, roles: HR },
+      { label: 'Payroll history', to: '/payroll/history', icon: History, roles: HR },
+      { label: 'Payslips', to: '/payroll/payslips', icon: FileStack, roles: HR, end: true },
       { label: 'Salary structures', to: '/payroll/salaries', icon: ReceiptText, roles: HR },
     ],
   },

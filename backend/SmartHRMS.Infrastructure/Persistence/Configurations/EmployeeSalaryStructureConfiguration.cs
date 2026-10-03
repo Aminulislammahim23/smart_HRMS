@@ -11,7 +11,7 @@ public class EmployeeSalaryStructureConfiguration : IEntityTypeConfiguration<Emp
         builder.ToTable("EmployeeSalaryStructures", t =>
         {
             t.HasCheckConstraint("CK_EmployeeSalaryStructures_NonNegative",
-                "[HouseRent] >= 0 AND [MedicalAllowance] >= 0 AND [TransportAllowance] >= 0 AND [OtherAllowance] >= 0 AND [MonthlyTax] >= 0");
+                "[HouseRent] >= 0 AND [MedicalAllowance] >= 0 AND [TransportAllowance] >= 0 AND [OtherAllowance] >= 0 AND [MonthlyTax] >= 0 AND [MonthlyProvidentFund] >= 0");
         });
 
         builder.HasKey(s => s.Id);
@@ -21,6 +21,7 @@ public class EmployeeSalaryStructureConfiguration : IEntityTypeConfiguration<Emp
         builder.Property(s => s.TransportAllowance).HasPrecision(18, 2);
         builder.Property(s => s.OtherAllowance).HasPrecision(18, 2);
         builder.Property(s => s.MonthlyTax).HasPrecision(18, 2);
+        builder.Property(s => s.MonthlyProvidentFund).HasPrecision(18, 2);
 
         // One salary structure per employee.
         builder.HasIndex(s => s.EmployeeId)

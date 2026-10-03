@@ -20,6 +20,7 @@ export function earningLines(record: PayrollRecord): AmountLine[] {
 export function deductionLines(record: PayrollRecord): AmountLine[] {
   return [
     { label: 'Tax', amount: record.tax },
+    { label: 'Provident fund', amount: record.providentFund },
     { label: 'Unpaid leave', amount: record.leaveDeduction },
     { label: 'Advance', amount: record.advanceDeduction },
     { label: 'Loan', amount: record.loanDeduction },

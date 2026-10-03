@@ -86,6 +86,7 @@ public class SalaryStructureService : ISalaryStructureService
         structure.TransportAllowance = Money.Round(dto.TransportAllowance);
         structure.OtherAllowance = Money.Round(dto.OtherAllowance);
         structure.MonthlyTax = Money.Round(dto.MonthlyTax);
+        structure.MonthlyProvidentFund = Money.Round(dto.MonthlyProvidentFund);
 
         // The audit entry records that the salary changed, not the amounts (salary data stays out of the log).
         _auditLogger.Add(AuditActions.SalaryStructureUpdated, nameof(EmployeeSalaryStructure), employee.Id, $"Salary structure of {employee.EmployeeCode} updated.");
@@ -118,6 +119,7 @@ public class SalaryStructureService : ISalaryStructureService
             TransportAllowance = structure?.TransportAllowance ?? 0,
             OtherAllowance = structure?.OtherAllowance ?? 0,
             MonthlyTax = structure?.MonthlyTax ?? 0,
+            MonthlyProvidentFund = structure?.MonthlyProvidentFund ?? 0,
             MonthlyGross = employee.BasicSalary is { } basic ? basic + allowances : null,
             UpdatedAt = structure?.UpdatedAt ?? structure?.CreatedAt,
         };

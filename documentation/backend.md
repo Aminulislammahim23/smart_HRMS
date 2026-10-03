@@ -1,6 +1,6 @@
 # SmartHRMS Backend Documentation
 
-> Describes the code, database and API **as they are after Day 16 (2026-10-03)**. Everything marked as implemented was
+> Describes the code, database and API **as they are after Day 17 (2026-10-03)**. Everything marked as implemented was
 > verified at runtime against the SQL Server database (see §22, §23, §25 and §26). Planned work is listed only in §24
 > and is clearly marked as not implemented. Day 16 also delivered the authentication, leave and audit groundwork that
 > payroll depends on (§26.1–§26.4), because no earlier day had built it.
@@ -641,7 +641,7 @@ dotnet ef migrations has-pending-model-changes --project SmartHRMS.Infrastructur
 dotnet ef migrations remove --project SmartHRMS.Infrastructure --startup-project smartHRMS.Api
 ```
 
-Applied migrations (all 9 applied; no pending model changes):
+Applied migrations (all 10 applied; no pending model changes):
 
 | # | Migration | Change |
 |---|---|---|
@@ -654,6 +654,7 @@ Applied migrations (all 9 applied; no pending model changes):
 | 7 | `AddEmployeeDocumentDetails` (Day 12) | `DocumentName` (backfilled from `FileName`), `IssueDate`, `ExpiryDate` |
 | 8 | `AddAttendance` (Day 13) | creates `Attendances` (FK to `Employees`, NO ACTION), unique (`EmployeeId`, `AttendanceDate`), index on `AttendanceDate`. Purely additive; no existing table touched |
 | 9 | `AddAuthLeaveAuditPayroll` (Day 16) | `ApplicationUsers`: `Role`, `SecurityStamp`, lockout and last-login columns, `EmployeeId` nullable with a filtered unique index, `PasswordHash` → `nvarchar(256)` (table was empty); `Employees.ManagerId` (self FK + check); new tables `LeaveRequests`, `AuditLogs`, `EmployeeSalaryStructures`, `PayrollPeriods`, `PayrollRecords` (see §26.5). Additive for every table that held data |
+| 10 | `AddPayslipsAndProvidentFund` (Day 17) | new table `Payslips` (unique `PayslipNumber` and `PayrollRecordId`, FKs NO ACTION, check "paid ⇔ payment date"); `PayrollRecords.ProvidentFund` and `EmployeeSalaryStructures.MonthlyProvidentFund` (`decimal(18,2)`, default 0); the two non-negative checks re-created to include them. Purely additive (both payroll tables were empty) |
 
 Before each schema change since Day 9 a verified copy-only backup was taken
 (`SmartHRMSDB_before_Day9/10/11/12/13/16_*.bak` in the SQL Server backup folder). Migrations are only generated after a
@@ -752,6 +753,15 @@ every write of the Day 1–13 modules is HR/Admin.
 | GET | `/api/payroll/employee/{employeeId}` | payroll history (own: Approved/Paid only) | — | `PayrollRecordDto[]` | 200, 403, 404 |
 | GET | `/api/payroll/payslip/{recordId}` | payslip (own after approval, HR/Admin) | — | `PayslipDto` | 200, 404 |
 | GET | `/api/audit-logs[?entityType&entityId&action&take]` | audit log (Admin) | query | `AuditLogDto[]` | 200, 400 |
+| GET | `/api/payroll/history[?employeeId&departmentId&month&year&status&paymentStatus&search&page&pageSize&sortBy&sortDirection]` | payroll history, every record (HR/Admin) | query | `PagedResult<PayrollRecordDto>` | 200, 400 |
+| GET | `/api/payroll/payslips[?same filters]` | issued payslips (HR/Admin) | query | `PagedResult<PayrollRecordDto>` | 200, 400 |
+| GET | `/api/payroll/payslips/{id}` | one payslip (owner or HR/Admin) | — | `PayslipDto` | 200, 404 |
+| POST | `/api/payroll/{periodId}/payslips` | issue missing payslips of approved payroll (HR/Admin) | — | `PayslipGenerationResultDto` | 200, 404, 409 |
+| POST | `/api/payroll/payslips/{id}/mark-paid` | record one payment (Admin) | `RecordPaymentDto` (optional) | `PayslipDto` | 200, 400, 404, 409 |
+| GET | `/api/payroll/employee/{employeeId}/payslips[?filters]` | one employee's payslips (self or HR/Admin) | query | `PagedResult<PayrollRecordDto>` | 200, 400, 403, 404 |
+| GET | `/api/payroll/me/payslips[?filters]` | own payslips (employee from the token) | query | `PagedResult<PayrollRecordDto>` | 200, 400 |
+| GET | `/api/payroll/me/payslips/current` | own latest payslip | — | `PayslipDto` | 200, 404 |
+| GET | `/api/payroll/me/payments[?page&pageSize]` | own paid payslips | query | `PagedResult<PayrollRecordDto>` | 200, 400 |
 
 Development-only: `GET /openapi/v1.json` (OpenAPI document) and `/swagger` (Swagger UI).
 
@@ -767,11 +777,13 @@ dotnet test smartHRMS.slnx
 dotnet ef migrations has-pending-model-changes --project SmartHRMS.Infrastructure --startup-project smartHRMS.Api
 ```
 
-| Kind | What | Result (latest run: Day 16, 2026-10-03) |
+| Kind | What | Result (latest run: Day 17, 2026-10-03) |
 |---|---|---|
 | Build | `dotnet build` | 0 warnings, 0 errors |
-| Unit tests | 282 xUnit tests (services, DTO validation, envelope, photo, documents, profile records, attendance; Day 16: payroll calculator, payroll workflow and access, leave, sign-in, users, managers) with in-memory fakes and a fake `TimeProvider` | 282 / 282 passed |
-| Migrations | `migrations list`, live schema query | 9 / 9 applied, schema matches configuration |
+| Unit tests | 306 xUnit tests (services, DTO validation, envelope, photo, documents, profile records, attendance; Day 16: payroll calculator, payroll workflow and access, leave, sign-in, users, managers; Day 17: payslip issuing, payments, isolation, history filters and paging, provident fund) with in-memory fakes and a fake `TimeProvider` | 306 / 306 passed |
+| Runtime API (Day 17) | payslip issuing at approval, payslip content, employee isolation, 401/403, history filters, sorting and paging, invalid input, payments, DB constraints, audit | 184 / 184 |
+| Browser (Day 17 frontend) | payroll history, payslip list and details, payment recording, My Payroll tabs, print, isolation, empty states, mobile/tablet | 13 / 13 (one expected count corrected after checking the database), no JS exceptions or console errors |
+| Migrations | `migrations list`, live schema query | 10 / 10 applied, schema matches configuration |
 | Runtime API (Day 16) | sign-in, lockout, sessions, roles on every module, users, managers, leave, salary, payroll workflow, payslips, audit, DB constraints | 249 / 249 |
 | Browser (Day 16 frontend) | sign-in, role guards, leave, salary, payroll workflow, payslip print, session end, mobile/tablet layout | 28 / 28, no JS exceptions or console errors |
 | Day 1–13 regression with authentication on | the suites below re-run as Admin against the Day 16 build | all passed except the OpenAPI route count (53 routes now, 0 duplicates; the check expected 26) |
@@ -791,7 +803,7 @@ The repository itself contains only unit tests (see §24).
 
 ---
 
-## 23. Day 1–16 Completion Matrix
+## 23. Day 1–17 Completion Matrix
 
 | Day | Feature | Status | Evidence |
 |-----|---------|--------|----------|
@@ -890,6 +902,13 @@ The repository itself contains only unit tests (see §24).
 | 16 | Approved/Paid payroll locked; Admin approves; nobody approves own salary | PASS | Day 16 suite + unit tests |
 | 16 | Payslip and employee history (own, after approval only) | PASS | Day 16 suite + browser suite |
 | 16 | DB constraints: unique (period, employee), non-negative amounts, filtered unique period dates, rowversion | PASS | direct SQL insert/update refused in the Day 16 suite |
+| 17 | Payslips issued only at approval (never for Draft/Calculated/PendingApproval/Cancelled) | PASS | Day 17 suite + unit tests |
+| 17 | Payslip = approved snapshot (locked record amounts, no recalculation), provident fund | PASS | Day 17 suite + unit tests |
+| 17 | Payment per payslip and per period; payment date validated; period Paid when all are paid | PASS | Day 17 suite + unit tests |
+| 17 | Payroll history / payslip list: filters, sorting, server paging | PASS | Day 17 suite + browser suite |
+| 17 | Employee My Payroll (current, history, payments) from the token; isolation; manager no access | PASS | Day 17 suite + browser suite |
+| 17 | 401 without token, 403 for wrong role, 404 for other employees' payslips | PASS | Day 17 suite |
+| 17 | Print-ready payslip page (`?print=1`) | PASS | browser suite (print() called once, sidebar hidden in print media) |
 
 ---
 
@@ -1236,3 +1255,177 @@ browser suite covers it instead.
 - `WorkCalendar` can read a holiday table to exclude public holidays from working days.
 - Leave balances: a `LeaveEntitlement` table, checked in `LeaveService.CreateAsync`.
 - PDF payslips: a server-side renderer behind the existing payslip DTO.
+
+---
+
+## 27. Day 17 — Payslip, Payroll History & Employee Payroll
+
+### 27.1 What was missing after Day 16
+
+Day 16 built payslips on the fly from the payroll record and tracked payment per payroll period only. There was:
+
+- no payslip identity (number, issue date);
+- no payment status or date per employee;
+- no paged or filtered history across periods;
+- no endpoints that take the employee from the token;
+- no provident fund.
+
+Day 17 adds these. It doesn't recalculate anything: the payroll calculation stays in `PayrollCalculator`.
+
+### 27.2 Payslip generation timing
+
+- **A payslip is issued only when its payroll is approved.** `PayrollService.ApproveAsync` issues one payslip per
+  payroll record in the same database transaction as the approval.
+- No payslip ever exists for Draft, Calculated, PendingApproval or Cancelled payroll. `POST /api/payroll/{periodId}/payslips`
+  answers 409 for those.
+- That endpoint only fills gaps, for payroll approved before Day 17. It is idempotent.
+- The payslip **is the approved snapshot**. It points to the payroll record, which is locked from approval on: no
+  edit, recalculation, cancel or delete. The amounts are never copied a second time and never recalculated.
+- **Payment is separate from approval:**
+  - an issued payslip starts `Unpaid` with no payment date;
+  - `POST /api/payroll/payslips/{id}/mark-paid` (Admin) records one employee's payment;
+  - the existing `POST /api/payroll/{periodId}/mark-paid` records every remaining payment at once;
+  - the payment date defaults to today's office date and can't be in the future or before the period starts;
+  - payslips already paid keep their own date;
+  - the payroll period becomes `Paid` automatically when its last payslip is paid.
+
+### 27.3 Database (migration `AddPayslipsAndProvidentFund`)
+
+| Change | Details |
+|---|---|
+| New table `Payslips` | `PayslipNumber` ("PS-{period start yyyyMMdd}-{employee code}", unique), `PayrollRecordId` (unique, FK), `PayrollPeriodId`, `EmployeeId`, `GeneratedAt`, `GeneratedByUserId`, `PaymentStatus` (Unpaid/Paid), `PaymentDate` (`date`), `PaidAt`, `PaidByUserId`; check: Paid ⇔ payment date present; every FK NO ACTION |
+| `PayrollRecords.ProvidentFund` | `decimal(18,2)`, default 0; included in `TotalDeduction` |
+| `EmployeeSalaryStructures.MonthlyProvidentFund` | `decimal(18,2)`, default 0; prorated like tax |
+
+The migration is purely additive. A verified backup was taken first (`SmartHRMSDB_before_Day17_*.bak`).
+
+Formula (unchanged apart from the provident fund):
+
+```
+Gross  = Basic + HouseRent + Medical + Transport + OtherAllowance + Overtime + Bonus
+Deduct = Tax + ProvidentFund + UnpaidLeave + Advance + Loan + Other
+Net    = Gross − Deduct
+```
+
+### 27.4 API (Day 17 endpoints)
+
+| Method | Endpoint | Who | Notes |
+|---|---|---|---|
+| GET | `/api/payroll/history` | HR, Admin | every record, any status, with payslip and payment |
+| GET | `/api/payroll/payslips` | HR, Admin | issued payslips only |
+| GET | `/api/payroll/payslips/{id}` | owner, HR, Admin | 404 for anyone else |
+| POST | `/api/payroll/{periodId}/payslips` | HR, Admin | issue missing payslips of Approved/Paid payroll; 409 otherwise |
+| POST | `/api/payroll/payslips/{id}/mark-paid` | Admin | `{ "paymentDate": "yyyy-MM-dd" }` (optional) |
+| GET | `/api/payroll/employee/{employeeId}/payslips` | the employee, HR, Admin | 403 for anyone else |
+| GET | `/api/payroll/me/payslips` | any signed-in employee | the employee comes from the token; a sent `employeeId` is ignored |
+| GET | `/api/payroll/me/payslips/current` | any signed-in employee | latest payslip; 404 while none is issued |
+| GET | `/api/payroll/me/payments` | any signed-in employee | paid payslips, newest payment first |
+
+Changed:
+
+- `POST /api/payroll/{periodId}/mark-paid` accepts an optional `RecordPaymentDto`.
+- `GET /api/payroll/payslip/{recordId}` (Day 16 route) is still there: HR/Admin get any record (a preview before
+  approval), employees only their own issued payslip.
+
+### 27.5 DTOs
+
+- `PayrollHistoryQueryDto` (query): `employeeId`, `departmentId`, `month` (1–12), `year` (2000–2100), `status` (payroll
+  status), `paymentStatus` (Unpaid, Paid), `search`, `page` (≥ 1), `pageSize` (1–100, default 25), `sortBy` (`period`,
+  `employee`, `gross`, `net`, `paymentDate`), `sortDirection` (`asc`, `desc`). Invalid values give 400.
+- `PagedResult<T>`: `items`, `page`, `pageSize`, `totalCount`, `totalPages`. This is the first paged response in the
+  API; it is returned inside the standard envelope.
+- `PayrollRecordDto` gained `providentFund`, `payslipId`, `payslipNumber`, `payslipGeneratedAt`, `paymentStatus`
+  (null until issued) and `paymentDate`.
+- `PayslipDto` gained `payslipId`, `payslipNumber`, `payrollPeriodId`, `employeePhotoUrl`, `payrollStatus`,
+  `paymentDate` and `generatedAt`; a "Provident fund" deduction line was added.
+  - **Breaking change:** in `PayslipDto`, `paymentStatus` used to carry the payroll status. It is now `Unpaid`/`Paid`,
+    and the payroll status is in `payrollStatus`. The bundled frontend was updated.
+- `PayrollPeriodDto` gained `payslipCount`, `paidPayslipCount` and `actions.canGeneratePayslips`.
+- `RecordPaymentDto` (`paymentDate`) and `PayslipGenerationResultDto` (`generated`, `alreadyGenerated`).
+- `SalaryStructureDto` and its update DTO gained `monthlyProvidentFund`.
+
+### 27.6 Permissions and security rules
+
+| | Employee | Manager | HR | Admin |
+|---|---|---|---|---|
+| Own payslips, current payslip, payment history | ✓ | ✓ (own) | ✓ (own) | ✓ (own) |
+| Another employee's payslip | — (404) | — (404, also for direct reports) | ✓ | ✓ |
+| Payroll history, payslip list | — (403) | — (403) | ✓ | ✓ |
+| Issue missing payslips | — | — | ✓ | ✓ |
+| Record a payment (payslip or whole period) | — | — | — (403) | ✓ |
+
+- Every rule is enforced in `PayslipService` and again by the controller policies.
+- The "me" endpoints never read an employee id from the request.
+- `employee/{employeeId}` routes compare the id with the token's employee.
+- Requests without a valid token get 401.
+- The audit log records `PayslipsGenerated`, `PayslipPaid`, `PayrollPaid` and every payslip view (`PayslipViewed`).
+
+### 27.7 Frontend
+
+- **Payroll history** (`/payroll/history`) and **Payslips** (`/payroll/payslips`), both HR/Admin:
+  - server-side filters (search, employee, department, month, year, payroll status, payment status) and sorting, all
+    kept in the URL;
+  - server paging and a reset button;
+  - actions: view breakdown, payslip, print;
+  - loading, empty and error states.
+- **Payslip details** (`/payroll/payslips/:id`, plus the Day 16 `/payroll/payslip/:recordId`):
+  - shows payslip number, photo, pay period, payment date, earnings, deductions (with provident fund), net, and
+    payroll and payment status;
+  - Admins get a "Record payment" panel with a date picker;
+  - "Print / save as PDF", and `?print=1` opens the print dialog automatically.
+- **My Payroll** (`/payroll/my`) has three tabs: current payslip (full payslip), payslip history (paged), and payment
+  history (paged). Every call uses the token-based "me" endpoints.
+- **Elsewhere:**
+  - the period page shows "N payslips · M paid" and a *Generate payslips* action when payslips are missing;
+  - the records table shows payment status and date;
+  - the salary structures page has the provident fund.
+- **Print and download:** printing is browser print with print CSS (sidebar, topbar and background hidden; A4). "Save
+  as PDF" in the print dialog is the download. No PDF library was added.
+
+### 27.8 Day 17 Checklist
+
+**Backend**
+- [x] Payslip implemented (issued at approval; approved snapshot)
+- [x] Payslip API implemented
+- [x] Payroll history API implemented
+- [x] Employee payroll API implemented (`me/*`, from the token)
+- [x] Filtering implemented
+- [x] Pagination implemented (plus sorting)
+- [x] Authorization verified
+- [x] Ownership verified
+
+**Frontend**
+- [x] Payroll history
+- [x] Payslip list
+- [x] Payslip details
+- [x] My Payroll
+- [x] Payment history
+- [x] Print functionality
+- [x] Loading states
+- [x] Empty states
+- [x] Error handling
+
+**Security**
+- [x] Employee isolation (404 for other payslips, 403 for other employees' lists, `me` ignores a sent id)
+- [x] HR permissions (history, payslips, issue; no payment recording, no audit log, no users)
+- [x] Admin permissions
+- [x] 401 tested
+- [x] 403 tested
+
+**Regression**
+- [x] Day 1–16 functionality verified (API and browser suites; the changes are listed in §27.9)
+- [x] No breaking changes, except `PayslipDto.paymentStatus` (now the payment status; the payroll status moved to
+  `payrollStatus`) and payment dates before the period start, which are now refused
+
+### 27.9 Testing results (2026-10-03)
+
+| Suite | Result |
+|---|---|
+| Unit tests | 306 / 306 (24 new) |
+| Day 17 live API | 184 / 184 |
+| Day 16 live API (regression) | 251 / 251; two Day 17 updates: the payslip status assertions, and a past payment month for the test period |
+| Day 10–13 live API (regression) | 193 + 167 + 108 + 137, and 56 / 57 (the OpenAPI route count is now 62, with 0 duplicates; the old check expects 26) |
+| Day 17 browser | 13 / 13 after correcting one hard-coded count in the test (the page showed 16 payslips, as the database confirmed) |
+| Day 1–16 browser (regression) | 59 / 59, 28 / 28, 28 / 28; two Day 16 expectations updated to the Day 17 wording and layout |
+
+All test data used `TEST-*` prefixes and was removed afterwards.

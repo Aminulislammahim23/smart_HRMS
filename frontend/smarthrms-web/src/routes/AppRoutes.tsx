@@ -37,6 +37,7 @@ const PayrollApprovalPage = lazy(() => import('../pages/payroll/PayrollApprovalP
 const PayslipPage = lazy(() => import('../pages/payroll/PayslipPage'))
 const MyPayrollPage = lazy(() => import('../pages/payroll/MyPayrollPage'))
 const SalaryStructuresPage = lazy(() => import('../pages/payroll/SalaryStructuresPage'))
+const PayrollHistoryPage = lazy(() => import('../pages/payroll/PayrollHistoryPage'))
 const UsersPage = lazy(() => import('../pages/users/UsersPage'))
 const NotFound = lazy(() => import('../pages/NotFound'))
 
@@ -75,7 +76,8 @@ export function AppRoutes() {
           {/* The server allows the employee, their manager, and HR/Admin. */}
           <Route path="/attendance/employee/:employeeId" element={<EmployeeAttendancePage />} />
           {/* The server allows the employee (approved/paid only) and HR/Admin. */}
-          <Route path="/payroll/payslip/:id" element={<PayslipPage />} />
+          <Route path="/payroll/payslip/:id" element={<PayslipPage by="record" />} />
+          <Route path="/payroll/payslips/:id" element={<PayslipPage by="payslip" />} />
 
           <Route element={<RoleRoute roles={['Manager', 'HR', 'Admin']} />}>
             <Route path="/leave/approvals" element={<LeaveApprovalsPage />} />
@@ -106,6 +108,8 @@ export function AppRoutes() {
             <Route path="/payroll/periods" element={<PayrollPeriodsPage />} />
             <Route path="/payroll/create" element={<PayrollCreatePage />} />
             <Route path="/payroll/salaries" element={<SalaryStructuresPage />} />
+            <Route path="/payroll/history" element={<PayrollHistoryPage mode="history" />} />
+            <Route path="/payroll/payslips" element={<PayrollHistoryPage key="payslips" mode="payslips" />} />
             <Route path="/payroll/:id" element={<PayrollPeriodDetailsPage />} />
             <Route path="/payroll/:id/records" element={<PayrollRecordsPage />} />
             <Route path="/payroll/:id/approval" element={<PayrollApprovalPage />} />

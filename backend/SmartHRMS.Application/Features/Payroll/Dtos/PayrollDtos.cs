@@ -31,6 +31,11 @@ public class PayrollPeriodDto
     /// <summary>Records that block submission (e.g. negative net salary).</summary>
     public int NeedsReviewCount { get; set; }
 
+    /// <summary>Payslips issued for this period (all records once approved).</summary>
+    public int PayslipCount { get; set; }
+
+    public int PaidPayslipCount { get; set; }
+
     public string? CreatedBy { get; set; }
 
     public DateTime CreatedAt { get; set; }
@@ -78,6 +83,9 @@ public class PayrollActionsDto
     public bool CanMarkPaid { get; set; }
 
     public bool CanCancel { get; set; }
+
+    /// <summary>Approved/Paid payroll that still has records without a payslip (e.g. approved before Day 17).</summary>
+    public bool CanGeneratePayslips { get; set; }
 }
 
 public class PayrollRecordDto
@@ -124,6 +132,8 @@ public class PayrollRecordDto
 
     public decimal LeaveDeduction { get; set; }
 
+    public decimal ProvidentFund { get; set; }
+
     public decimal AdvanceDeduction { get; set; }
 
     public decimal LoanDeduction { get; set; }
@@ -148,6 +158,18 @@ public class PayrollRecordDto
     public string Status { get; set; } = string.Empty;
 
     public string? Remarks { get; set; }
+
+    /// <summary>The issued payslip, once the payroll is approved; null before.</summary>
+    public Guid? PayslipId { get; set; }
+
+    public string? PayslipNumber { get; set; }
+
+    public DateTime? PayslipGeneratedAt { get; set; }
+
+    /// <summary>Unpaid or Paid; null while no payslip has been generated.</summary>
+    public string? PaymentStatus { get; set; }
+
+    public DateOnly? PaymentDate { get; set; }
 
     /// <summary>True while the period is Draft or Calculated and the user is HR/Admin.</summary>
     public bool CanEdit { get; set; }
@@ -264,7 +286,14 @@ public class PayslipLineDto
 
 public class PayslipDto
 {
+    /// <summary>Null for an HR/Admin preview of payroll that is not approved yet.</summary>
+    public Guid? PayslipId { get; set; }
+
+    public string? PayslipNumber { get; set; }
+
     public Guid RecordId { get; set; }
+
+    public Guid PayrollPeriodId { get; set; }
 
     public string CompanyName { get; set; } = string.Empty;
 
@@ -277,6 +306,9 @@ public class PayslipDto
     public string EmployeeCode { get; set; } = string.Empty;
 
     public string EmployeeName { get; set; } = string.Empty;
+
+    /// <summary>Relative URL of the employee's current photo, or null.</summary>
+    public string? EmployeePhotoUrl { get; set; }
 
     public string? DepartmentName { get; set; }
 
@@ -309,7 +341,16 @@ public class PayslipDto
     public decimal AbsentDays { get; set; }
 
     /// <summary>The payroll period status: Draft, Calculated, PendingApproval, Approved, Paid or Cancelled.</summary>
+    public string PayrollStatus { get; set; } = string.Empty;
+
+    /// <summary>Unpaid or Paid (a preview is always Unpaid).</summary>
     public string PaymentStatus { get; set; } = string.Empty;
+
+    /// <summary>Calendar date the salary was paid, once paid.</summary>
+    public DateOnly? PaymentDate { get; set; }
+
+    /// <summary>When the payslip was issued (at approval); null for a preview.</summary>
+    public DateTime? GeneratedAt { get; set; }
 
     /// <summary>False for a preview of payroll that isn't approved yet (HR/Admin only).</summary>
     public bool IsFinal { get; set; }

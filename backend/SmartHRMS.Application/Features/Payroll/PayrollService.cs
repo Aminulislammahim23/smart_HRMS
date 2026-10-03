@@ -41,6 +41,7 @@ public class PayrollService : IPayrollService
     private readonly ICurrentUser _currentUser;
     private readonly WorkCalendar _calendar;
     private readonly PayrollOptions _options;
+    private readonly AttendanceClock _clock;
 
     public PayrollService(
         IPayrollRepository payrollRepository,
@@ -51,7 +52,8 @@ public class PayrollService : IPayrollService
         IAuditLogger auditLogger,
         ICurrentUser currentUser,
         WorkCalendar calendar,
-        PayrollOptions options)
+        PayrollOptions options,
+        AttendanceClock clock)
     {
         _payrollRepository = payrollRepository;
         _employeeRepository = employeeRepository;
@@ -62,6 +64,7 @@ public class PayrollService : IPayrollService
         _currentUser = currentUser;
         _calendar = calendar;
         _options = options;
+        _clock = clock;
     }
 
     // ---- periods ----
@@ -183,7 +186,7 @@ public class PayrollService : IPayrollService
             }
 
             var structure = employee.SalaryStructure;
-            var salary = new SalaryInput(basic, structure?.HouseRent ?? 0, structure?.MedicalAllowance ?? 0, structure?.TransportAllowance ?? 0, structure?.OtherAllowance ?? 0, structure?.MonthlyTax ?? 0);
+            var salary = new SalaryInput(basic, structure?.HouseRent ?? 0, structure?.MedicalAllowance ?? 0, structure?.TransportAllowance ?? 0, structure?.OtherAllowance ?? 0, structure?.MonthlyTax ?? 0, structure?.MonthlyProvidentFund ?? 0);
             var summary = PayrollCalculator.Summarize(
                 _calendar,
                 period.StartDate,
@@ -334,32 +337,55 @@ public class PayrollService : IPayrollService
             throw new BadRequestException("This payroll has no records or has records that need review.");
         }
 
+        var now = DateTime.UtcNow;
+        var userId = _currentUser.RequireUserId();
         period.Status = PayrollPeriodStatus.Approved;
-        period.ApprovedAt = DateTime.UtcNow;
-        period.ApprovedByUserId = _currentUser.RequireUserId();
-        period.UpdatedAt = DateTime.UtcNow;
+        period.ApprovedAt = now;
+        period.ApprovedByUserId = userId;
+        period.UpdatedAt = now;
         SetRecordStatus(period, PayrollRecordStatus.Approved);
 
+        // The payslips are issued in the same transaction as the approval: they exist exactly when payroll is final.
+        var payslips = PayslipIssuer.IssueMissing(period, userId, now);
+        foreach (var payslip in payslips)
+        {
+            await _payrollRepository.AddPayslipAsync(payslip, cancellationToken);
+        }
+
         _auditLogger.Add(AuditActions.PayrollApproved, nameof(PayrollPeriod), period.Id);
+        _auditLogger.Add(AuditActions.PayslipsGenerated, nameof(PayrollPeriod), period.Id, $"{payslips.Count} payslips issued.");
         await _payrollRepository.SaveChangesAsync(cancellationToken);
 
         return await MapPeriodAsync(period, cancellationToken);
     }
 
-    public async Task<PayrollPeriodDto> MarkPaidAsync(Guid periodId, CancellationToken cancellationToken)
+    public async Task<PayrollPeriodDto> MarkPaidAsync(Guid periodId, RecordPaymentDto dto, CancellationToken cancellationToken)
     {
         _currentUser.EnsureAdmin();
 
         var period = await GetPeriodEntityAsync(periodId, true, cancellationToken);
         EnsureStatus(period, "marked as paid", PayrollPeriodStatus.Approved);
 
-        period.Status = PayrollPeriodStatus.Paid;
-        period.PaidAt = DateTime.UtcNow;
-        period.PaidByUserId = _currentUser.RequireUserId();
-        period.UpdatedAt = DateTime.UtcNow;
-        SetRecordStatus(period, PayrollRecordStatus.Paid);
+        var now = DateTime.UtcNow;
+        var userId = _currentUser.RequireUserId();
+        var paymentDate = PayslipIssuer.PaymentDate(dto.PaymentDate, period, _clock.Today);
 
-        _auditLogger.Add(AuditActions.PayrollPaid, nameof(PayrollPeriod), period.Id);
+        foreach (var payslip in PayslipIssuer.IssueMissing(period, userId, now))
+        {
+            await _payrollRepository.AddPayslipAsync(payslip, cancellationToken);
+        }
+
+        // Payslips already paid individually keep their own payment date.
+        var newlyPaid = 0;
+        foreach (var payslip in period.Records.Select(r => r.Payslip!).Where(p => p.PaymentStatus != PaymentStatus.Paid))
+        {
+            PayslipIssuer.MarkPaid(payslip, paymentDate, userId, now);
+            newlyPaid++;
+        }
+
+        PayslipIssuer.CompletePeriodIfAllPaid(period, userId, now);
+
+        _auditLogger.Add(AuditActions.PayrollPaid, nameof(PayrollPeriod), period.Id, $"{newlyPaid} payslips paid on {paymentDate:yyyy-MM-dd}.");
         await _payrollRepository.SaveChangesAsync(cancellationToken);
 
         return await MapPeriodAsync(period, cancellationToken);
@@ -401,60 +427,6 @@ public class PayrollService : IPayrollService
         var statuses = _currentUser.IsHrOrAdmin() ? null : FinalStatuses;
         var records = await _payrollRepository.SearchRecordsAsync(new PayrollRecordFilter(null, employeeId, null, null, null, null, statuses), cancellationToken);
         return records.Select(MapRecord).ToList();
-    }
-
-    public async Task<PayslipDto> GetPayslipAsync(Guid recordId, CancellationToken cancellationToken)
-    {
-        var record = await GetVisibleRecordAsync(recordId, cancellationToken);
-        var period = record.PayrollPeriod!;
-        var names = await GetNamesAsync(new[] { period.ApprovedByUserId }, cancellationToken);
-
-        _auditLogger.Add(AuditActions.PayslipViewed, nameof(PayrollRecord), record.Id, $"Payslip of {record.EmployeeCode}, {period.Name}.");
-        await _payrollRepository.SaveChangesAsync(cancellationToken);
-
-        return new PayslipDto
-        {
-            RecordId = record.Id,
-            CompanyName = _options.CompanyName,
-            CompanyAddress = _options.CompanyAddress,
-            Currency = _options.Currency,
-            EmployeeId = record.EmployeeId,
-            EmployeeCode = record.EmployeeCode,
-            EmployeeName = record.EmployeeName,
-            DepartmentName = record.DepartmentName,
-            DesignationName = record.DesignationName,
-            PeriodName = period.Name,
-            PeriodStartDate = period.StartDate,
-            PeriodEndDate = period.EndDate,
-            Earnings = Lines(
-                ("Basic salary", record.BasicSalary, true),
-                ("House rent", record.HouseRent, false),
-                ("Medical allowance", record.MedicalAllowance, false),
-                ("Transport allowance", record.TransportAllowance, false),
-                ("Other allowance", record.OtherAllowance, false),
-                ("Overtime", record.OvertimeAmount, false),
-                ("Bonus", record.Bonus, false)),
-            Deductions = Lines(
-                ("Tax", record.Tax, false),
-                ("Unpaid leave", record.LeaveDeduction, false),
-                ("Advance", record.AdvanceDeduction, false),
-                ("Loan", record.LoanDeduction, false),
-                ("Other deduction", record.OtherDeduction, false)),
-            GrossSalary = record.GrossSalary,
-            TotalDeduction = record.TotalDeduction,
-            NetSalary = record.NetSalary,
-            WorkingDays = record.WorkingDays,
-            PresentDays = record.PresentDays,
-            PaidLeaveDays = record.PaidLeaveDays,
-            UnpaidLeaveDays = record.UnpaidLeaveDays,
-            AbsentDays = record.AbsentDays,
-            PaymentStatus = period.Status.ToString(),
-            IsFinal = FinalStatuses.Contains(period.Status),
-            ApprovedBy = NameOf(names, period.ApprovedByUserId),
-            ApprovedAt = period.ApprovedAt,
-            PaidAt = period.PaidAt,
-            Remarks = record.Remarks,
-        };
     }
 
     // ---- helpers ----
@@ -540,6 +512,7 @@ public class PayrollService : IPayrollService
         record.TransportAllowance = amounts.TransportAllowance;
         record.OtherAllowance = amounts.OtherAllowance;
         record.Tax = amounts.Tax;
+        record.ProvidentFund = amounts.ProvidentFund;
         record.LeaveDeduction = amounts.LeaveDeduction;
 
         record.WorkingDays = summary.EmployedWorkingDays;
@@ -569,11 +542,6 @@ public class PayrollService : IPayrollService
             EmployeeName = $"{employee.FirstName} {employee.LastName}".Trim(),
             Reason = reason,
         };
-    }
-
-    private static List<PayslipLineDto> Lines(params (string Label, decimal Amount, bool Always)[] lines)
-    {
-        return lines.Where(l => l.Always || l.Amount != 0).Select(l => new PayslipLineDto { Label = l.Label, Amount = l.Amount }).ToList();
     }
 
     private static TEnum? ParseEnum<TEnum>(string? value, string label) where TEnum : struct, Enum
@@ -612,6 +580,9 @@ public class PayrollService : IPayrollService
         var totals = periods.Count == 0
             ? new Dictionary<Guid, PayrollTotals>()
             : await _payrollRepository.GetTotalsAsync(periods.Select(p => p.Id).ToList(), cancellationToken);
+        var payslipCounts = periods.Count == 0
+            ? new Dictionary<Guid, PayslipCounts>()
+            : await _payrollRepository.GetPayslipCountsAsync(periods.Select(p => p.Id).ToList(), cancellationToken);
         var names = await GetNamesAsync(
             periods.SelectMany(p => new[] { p.CreatedByUserId, p.CalculatedByUserId, p.SubmittedByUserId, p.ApprovedByUserId, p.PaidByUserId, p.CancelledByUserId }),
             cancellationToken);
@@ -619,6 +590,7 @@ public class PayrollService : IPayrollService
         return periods.Select(period =>
         {
             var total = totals.GetValueOrDefault(period.Id) ?? new PayrollTotals(0, 0, 0, 0, 0);
+            var payslips = payslipCounts.GetValueOrDefault(period.Id) ?? new PayslipCounts(0, 0);
             return new PayrollPeriodDto
             {
                 Id = period.Id,
@@ -633,6 +605,8 @@ public class PayrollService : IPayrollService
                 DeductionTotal = total.DeductionTotal,
                 NetTotal = total.NetTotal,
                 NeedsReviewCount = total.NeedsReviewCount,
+                PayslipCount = payslips.Issued,
+                PaidPayslipCount = payslips.Paid,
                 CreatedBy = NameOf(names, period.CreatedByUserId),
                 CreatedAt = period.CreatedAt,
                 UpdatedAt = period.UpdatedAt,
@@ -646,12 +620,12 @@ public class PayrollService : IPayrollService
                 PaidBy = NameOf(names, period.PaidByUserId),
                 CancelledAt = period.CancelledAt,
                 CancelledBy = NameOf(names, period.CancelledByUserId),
-                Actions = ActionsFor(period, total),
+                Actions = ActionsFor(period, total, payslips),
             };
         }).ToList();
     }
 
-    private PayrollActionsDto ActionsFor(PayrollPeriod period, PayrollTotals totals)
+    private PayrollActionsDto ActionsFor(PayrollPeriod period, PayrollTotals totals, PayslipCounts payslips)
     {
         var hr = _currentUser.IsHrOrAdmin();
         var admin = _currentUser.IsAdmin();
@@ -667,12 +641,17 @@ public class PayrollService : IPayrollService
             CanApprove = admin && status == PayrollPeriodStatus.PendingApproval,
             CanMarkPaid = admin && status == PayrollPeriodStatus.Approved,
             CanCancel = hr && status is PayrollPeriodStatus.Draft or PayrollPeriodStatus.Calculated or PayrollPeriodStatus.PendingApproval,
+            CanGeneratePayslips = hr && status is PayrollPeriodStatus.Approved or PayrollPeriodStatus.Paid && payslips.Issued < totals.EmployeeCount,
         };
     }
 
-    private PayrollRecordDto MapRecord(PayrollRecord record)
+    private PayrollRecordDto MapRecord(PayrollRecord record) => ToDto(record, _currentUser.IsHrOrAdmin());
+
+    /// <summary>Record → DTO, including the issued payslip and its payment, if any.</summary>
+    internal static PayrollRecordDto ToDto(PayrollRecord record, bool isHrOrAdmin)
     {
         var period = record.PayrollPeriod;
+        var payslip = record.Payslip;
         return new PayrollRecordDto
         {
             Id = record.Id,
@@ -696,6 +675,7 @@ public class PayrollService : IPayrollService
             GrossSalary = record.GrossSalary,
             Tax = record.Tax,
             LeaveDeduction = record.LeaveDeduction,
+            ProvidentFund = record.ProvidentFund,
             AdvanceDeduction = record.AdvanceDeduction,
             LoanDeduction = record.LoanDeduction,
             OtherDeduction = record.OtherDeduction,
@@ -708,7 +688,12 @@ public class PayrollService : IPayrollService
             AbsentDays = record.AbsentDays,
             Status = record.Status.ToString(),
             Remarks = record.Remarks,
-            CanEdit = _currentUser.IsHrOrAdmin() && period?.Status is PayrollPeriodStatus.Draft or PayrollPeriodStatus.Calculated,
+            PayslipId = payslip?.Id,
+            PayslipNumber = payslip?.PayslipNumber,
+            PayslipGeneratedAt = payslip?.GeneratedAt,
+            PaymentStatus = payslip?.PaymentStatus.ToString(),
+            PaymentDate = payslip?.PaymentDate,
+            CanEdit = isHrOrAdmin && period?.Status is PayrollPeriodStatus.Draft or PayrollPeriodStatus.Calculated,
             CreatedAt = record.CreatedAt,
             UpdatedAt = record.UpdatedAt,
         };

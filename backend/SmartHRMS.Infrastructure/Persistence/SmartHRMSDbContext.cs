@@ -47,6 +47,8 @@ public class SmartHRMSDbContext : DbContext
 
     public DbSet<PayrollRecord> PayrollRecords { get; set; }
 
+    public DbSet<Payslip> Payslips { get; set; }
+
     public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
         try

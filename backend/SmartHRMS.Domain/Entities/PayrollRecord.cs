@@ -48,6 +48,8 @@ public class PayrollRecord : BaseEntity
 
     public decimal LeaveDeduction { get; set; }
 
+    public decimal ProvidentFund { get; set; }
+
     public decimal AdvanceDeduction { get; set; }
 
     public decimal LoanDeduction { get; set; }
@@ -72,4 +74,7 @@ public class PayrollRecord : BaseEntity
     public PayrollRecordStatus Status { get; set; } = PayrollRecordStatus.Calculated;
 
     public string? Remarks { get; set; }
+
+    /// <summary>Issued once the payroll is approved; null before.</summary>
+    public Payslip? Payslip { get; set; }
 }

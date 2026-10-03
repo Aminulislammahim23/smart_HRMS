@@ -11,7 +11,7 @@ public class PayrollRecordConfiguration : IEntityTypeConfiguration<PayrollRecord
         builder.ToTable("PayrollRecords", t => t.HasCheckConstraint("CK_PayrollRecords_NonNegative",
             "[BasicSalary] >= 0 AND [HouseRent] >= 0 AND [MedicalAllowance] >= 0 AND [TransportAllowance] >= 0 AND [OtherAllowance] >= 0 "
             + "AND [OvertimeAmount] >= 0 AND [Bonus] >= 0 AND [Tax] >= 0 AND [LeaveDeduction] >= 0 AND [AdvanceDeduction] >= 0 "
-            + "AND [LoanDeduction] >= 0 AND [OtherDeduction] >= 0"));
+            + "AND [LoanDeduction] >= 0 AND [OtherDeduction] >= 0 AND [ProvidentFund] >= 0"));
 
         builder.HasKey(r => r.Id);
 
@@ -25,7 +25,7 @@ public class PayrollRecordConfiguration : IEntityTypeConfiguration<PayrollRecord
                  {
                      nameof(PayrollRecord.BasicSalary), nameof(PayrollRecord.HouseRent), nameof(PayrollRecord.MedicalAllowance),
                      nameof(PayrollRecord.TransportAllowance), nameof(PayrollRecord.OtherAllowance), nameof(PayrollRecord.OvertimeAmount),
-                     nameof(PayrollRecord.Bonus), nameof(PayrollRecord.GrossSalary), nameof(PayrollRecord.Tax), nameof(PayrollRecord.LeaveDeduction),
+                     nameof(PayrollRecord.Bonus), nameof(PayrollRecord.GrossSalary), nameof(PayrollRecord.Tax), nameof(PayrollRecord.LeaveDeduction), nameof(PayrollRecord.ProvidentFund),
                      nameof(PayrollRecord.AdvanceDeduction), nameof(PayrollRecord.LoanDeduction), nameof(PayrollRecord.OtherDeduction),
                      nameof(PayrollRecord.TotalDeduction), nameof(PayrollRecord.NetSalary),
                  })

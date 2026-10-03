@@ -21,6 +21,8 @@ const LABELS: Record<string, string> = {
   approval: 'Approval',
   payslip: 'Payslip',
   users: 'Users & roles',
+  history: 'History',
+  payslips: 'Payslips',
 }
 
 /** Label for an id segment, by the segment before it; ids of pages that have no own page are skipped. */
@@ -29,6 +31,7 @@ const ID_LABELS: Record<string, string> = {
   documents: 'Employee documents',
   employee: 'Employee attendance',
   payroll: 'Payroll period',
+  payslips: 'Payslip',
   payslip: 'Payslip',
 }
 

@@ -1,4 +1,4 @@
-import type { PayrollRecordStatus, PayrollStatus } from '../../types/payroll'
+import type { PaymentStatus, PayrollRecordStatus, PayrollStatus } from '../../types/payroll'
 import { enumLabel } from '../../utils/formatters'
 
 // Neutral states use an outline: a soft neutral badge is almost invisible on the dark theme.
@@ -25,4 +25,10 @@ export function PayrollStatusBadge({ status }: { status: PayrollStatus }) {
 
 export function PayrollRecordStatusBadge({ status }: { status: PayrollRecordStatus }) {
   return <span className={`badge badge-sm whitespace-nowrap ${RECORD_CLASSES[status]}`}>{enumLabel(status)}</span>
+}
+
+/** Payslip payment: Paid, Unpaid, or "Not issued" while no payslip exists yet. */
+export function PaymentStatusBadge({ status }: { status: PaymentStatus | null }) {
+  if (!status) return <span className="badge badge-sm badge-outline whitespace-nowrap">Not issued</span>
+  return <span className={`badge badge-sm whitespace-nowrap ${status === 'Paid' ? 'badge-soft badge-success' : 'badge-soft badge-warning'}`}>{status}</span>
 }

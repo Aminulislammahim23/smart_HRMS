@@ -26,11 +26,10 @@ public interface IPayrollService
 
     Task<PayrollPeriodDto> ApproveAsync(Guid periodId, CancellationToken cancellationToken);
 
-    Task<PayrollPeriodDto> MarkPaidAsync(Guid periodId, CancellationToken cancellationToken);
+    /// <summary>Records payment of every unpaid payslip of an Approved payroll; the payroll becomes Paid.</summary>
+    Task<PayrollPeriodDto> MarkPaidAsync(Guid periodId, RecordPaymentDto dto, CancellationToken cancellationToken);
 
     Task<PayrollPeriodDto> CancelAsync(Guid periodId, CancelPayrollDto dto, CancellationToken cancellationToken);
 
     Task<List<PayrollRecordDto>> GetEmployeeHistoryAsync(Guid employeeId, CancellationToken cancellationToken);
-
-    Task<PayslipDto> GetPayslipAsync(Guid recordId, CancellationToken cancellationToken);
 }

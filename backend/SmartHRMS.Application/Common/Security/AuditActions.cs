@@ -28,4 +28,6 @@ public static class AuditActions
     public const string PayrollPaid = "PayrollPaid";
     public const string PayrollCancelled = "PayrollCancelled";
     public const string PayslipViewed = "PayslipViewed";
+    public const string PayslipsGenerated = "PayslipsGenerated";
+    public const string PayslipPaid = "PayslipPaid";
 }

@@ -14,7 +14,12 @@ export interface PayrollActions {
   canApprove: boolean
   canMarkPaid: boolean
   canCancel: boolean
+  /** Approved/Paid payroll with records that still lack a payslip. */
+  canGeneratePayslips: boolean
 }
+
+export const PAYMENT_STATUSES = ['Unpaid', 'Paid'] as const
+export type PaymentStatus = (typeof PAYMENT_STATUSES)[number]
 
 /** PayrollPeriodDto. Dates are "yyyy-MM-dd"; *At values are UTC instants. Amounts are plain decimals. */
 export interface PayrollPeriod {
@@ -30,6 +35,9 @@ export interface PayrollPeriod {
   deductionTotal: number
   netTotal: number
   needsReviewCount: number
+  /** Payslips issued (every record once approved) and how many are paid. */
+  payslipCount: number
+  paidPayslipCount: number
   createdBy: string | null
   createdAt: string
   updatedAt: string | null
@@ -69,6 +77,7 @@ export interface PayrollRecord {
   grossSalary: number
   tax: number
   leaveDeduction: number
+  providentFund: number
   advanceDeduction: number
   loanDeduction: number
   otherDeduction: number
@@ -81,6 +90,13 @@ export interface PayrollRecord {
   absentDays: number
   status: PayrollRecordStatus
   remarks: string | null
+  /** The issued payslip (once approved); null before. */
+  payslipId: string | null
+  payslipNumber: string | null
+  payslipGeneratedAt: string | null
+  /** Null while no payslip has been issued. */
+  paymentStatus: PaymentStatus | null
+  paymentDate: string | null
   canEdit: boolean
   createdAt: string
   updatedAt: string | null
@@ -136,13 +152,19 @@ export interface PayslipLine {
 }
 
 export interface Payslip {
+  /** Null for an HR/Admin preview of payroll that is not approved yet. */
+  payslipId: string | null
+  payslipNumber: string | null
   recordId: string
+  payrollPeriodId: string
   companyName: string
   companyAddress: string | null
   currency: string
   employeeId: string
   employeeCode: string
   employeeName: string
+  /** Relative URL of the employee's current photo, or null. */
+  employeePhotoUrl: string | null
   departmentName: string | null
   designationName: string | null
   periodName: string
@@ -158,7 +180,12 @@ export interface Payslip {
   paidLeaveDays: number
   unpaidLeaveDays: number
   absentDays: number
-  paymentStatus: PayrollStatus
+  payrollStatus: PayrollStatus
+  paymentStatus: PaymentStatus
+  /** Date the salary was paid ("yyyy-MM-dd"). */
+  paymentDate: string | null
+  /** When the payslip was issued (at approval); null for a preview. */
+  generatedAt: string | null
   /** False for a preview of payroll that isn't approved yet (HR/Admin only). */
   isFinal: boolean
   approvedBy: string | null
@@ -181,6 +208,8 @@ export interface SalaryStructure {
   transportAllowance: number
   otherAllowance: number
   monthlyTax: number
+  /** Monthly provident fund contribution (employee share), withheld from salary. */
+  monthlyProvidentFund: number
   monthlyGross: number | null
   updatedAt: string | null
 }
@@ -192,6 +221,44 @@ export interface UpdateSalaryStructureRequest {
   transportAllowance: number
   otherAllowance: number
   monthlyTax: number
+  monthlyProvidentFund: number
+}
+
+/** PagedResult<T>: one page of a server-side paged list (pages are 1-based). */
+export interface PagedResult<T> {
+  items: T[]
+  page: number
+  pageSize: number
+  totalCount: number
+  totalPages: number
+}
+
+export const HISTORY_SORTS = ['period', 'employee', 'gross', 'net', 'paymentDate'] as const
+export type HistorySort = (typeof HISTORY_SORTS)[number]
+
+/** Filters and paging for payroll history and payslip lists (all optional). */
+export interface PayrollHistoryQuery {
+  employeeId?: string
+  departmentId?: string
+  month?: number
+  year?: number
+  status?: PayrollStatus
+  paymentStatus?: PaymentStatus
+  search?: string
+  page?: number
+  pageSize?: number
+  sortBy?: HistorySort
+  sortDirection?: 'asc' | 'desc'
+}
+
+export interface PayslipGenerationResult {
+  payrollPeriodId: string
+  generated: number
+  alreadyGenerated: number
+}
+
+export function isPaymentStatus(value: string): value is PaymentStatus {
+  return PAYMENT_STATUSES.some((status) => status === value)
 }
 
 export function isPayrollStatus(value: string): value is PayrollStatus {
