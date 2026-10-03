@@ -15,6 +15,7 @@ import { DetailList } from '../common/DetailList'
 import { EmptyState } from '../common/EmptyState'
 import { Modal } from '../common/Modal'
 import { PersonalDetailsForm } from './PersonalDetailsForm'
+import { useCanEditProfile } from './profileEditing'
 
 interface PersonalDetailsSectionProps {
   employeeId: string
@@ -29,6 +30,7 @@ type Editing = { details?: PersonalDetails } | null
  * fetched from /personal-details only when the user opens the edit form.
  */
 export function PersonalDetailsSection({ employeeId, info, onChanged }: PersonalDetailsSectionProps) {
+  const canEdit = useCanEditProfile()
   const { notify } = useToast()
   const [editing, setEditing] = useState<Editing>(null)
   const [loadingDetails, setLoadingDetails] = useState(false)
@@ -65,7 +67,7 @@ export function PersonalDetailsSection({ employeeId, info, onChanged }: Personal
             <h2 className="font-semibold">Personal details</h2>
             <p className="text-sm text-base-content/60">Gender, marital status, blood group, nationality and identity documents.</p>
           </div>
-          {info.hasPersonalDetails && (
+          {canEdit && info.hasPersonalDetails && (
             <div className="flex gap-2">
               <button type="button" className="btn btn-sm" onClick={openEdit} disabled={loadingDetails}>
                 {loadingDetails ? <span className="loading loading-spinner loading-xs" /> : <Pencil className="size-4" />} Edit
@@ -96,9 +98,11 @@ export function PersonalDetailsSection({ employeeId, info, onChanged }: Personal
             icon={IdCard}
             title="No personal details yet"
             action={
-              <button type="button" className="btn btn-primary btn-sm" onClick={() => setEditing({})}>
-                <Plus className="size-4" /> Add personal details
-              </button>
+              canEdit ? (
+                <button type="button" className="btn btn-primary btn-sm" onClick={() => setEditing({})}>
+                  <Plus className="size-4" /> Add personal details
+                </button>
+              ) : undefined
             }
           />
         )}

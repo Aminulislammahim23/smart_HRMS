@@ -1,9 +1,10 @@
-import { ArrowLeft, Pencil, UserX } from 'lucide-react'
+import { ArrowLeft, Network, Pencil, UserX } from 'lucide-react'
 import { useCallback, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { ConfirmDialog } from '../../components/common/ConfirmDialog'
 import { ErrorState } from '../../components/common/ErrorState'
 import { Loading } from '../../components/common/Loading'
+import { ManagerModal } from '../../components/employee/ManagerModal'
 import { EmployeeProfileView } from '../../components/profile/EmployeeProfileView'
 import { useApi } from '../../hooks/useApi'
 import { useToast } from '../../hooks/useToast'
@@ -13,6 +14,7 @@ export default function EmployeeDetails() {
   const { id = '' } = useParams()
   const { notify } = useToast()
   const [confirmDeactivate, setConfirmDeactivate] = useState(false)
+  const [editingManager, setEditingManager] = useState(false)
   const load = useCallback((signal: AbortSignal) => getEmployeeProfile(id, signal), [id])
   const { data: profile, error, loading, reload } = useApi(load)
 
@@ -48,6 +50,9 @@ export default function EmployeeDetails() {
             <Link to={`/employees/${id}/edit`} className="btn btn-sm btn-primary">
               <Pencil className="size-4" /> Edit
             </Link>
+            <button type="button" className="btn btn-sm" onClick={() => setEditingManager(true)}>
+              <Network className="size-4" /> Manager
+            </button>
             {profile.jobInformation.employmentStatus !== 'Inactive' && (
               <button type="button" className="btn btn-sm btn-ghost text-error" onClick={() => setConfirmDeactivate(true)}>
                 <UserX className="size-4" /> Deactivate
@@ -56,6 +61,8 @@ export default function EmployeeDetails() {
           </>
         }
       />
+
+      {editingManager && <ManagerModal employeeId={id} onClose={() => setEditingManager(false)} />}
 
       <ConfirmDialog
         open={confirmDeactivate}

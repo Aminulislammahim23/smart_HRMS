@@ -16,10 +16,12 @@ interface AttendanceDetailsModalProps {
   onClose: () => void
   /** Called after a successful edit or delete so the page can reload its data. */
   onChanged: () => void
+  /** Hides edit and delete (only HR/Admin may correct attendance; the API enforces it). */
+  readOnly?: boolean
 }
 
 /** Details of one attendance day, with HR correction (edit) and delete. */
-export function AttendanceDetailsModal({ record, onClose, onChanged }: AttendanceDetailsModalProps) {
+export function AttendanceDetailsModal({ record, onClose, onChanged, readOnly = false }: AttendanceDetailsModalProps) {
   const { notify } = useToast()
   const [editing, setEditing] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -83,12 +85,16 @@ export function AttendanceDetailsModal({ record, onClose, onChanged }: Attendanc
             <Link to={`/attendance/employee/${record.employeeId}?month=${record.attendanceDate.slice(0, 7)}`} className="btn btn-ghost btn-sm" onClick={onClose}>
               <CalendarDays className="size-4" /> Month view
             </Link>
-            <button type="button" className="btn btn-ghost btn-sm text-error" onClick={() => setConfirmDelete(true)}>
-              <Trash2 className="size-4" /> Delete
-            </button>
-            <button type="button" className="btn btn-primary btn-sm" onClick={() => setEditing(true)}>
-              <Pencil className="size-4" /> Edit
-            </button>
+            {!readOnly && (
+              <>
+                <button type="button" className="btn btn-ghost btn-sm text-error" onClick={() => setConfirmDelete(true)}>
+                  <Trash2 className="size-4" /> Delete
+                </button>
+                <button type="button" className="btn btn-primary btn-sm" onClick={() => setEditing(true)}>
+                  <Pencil className="size-4" /> Edit
+                </button>
+              </>
+            )}
           </div>
         </>
       )}

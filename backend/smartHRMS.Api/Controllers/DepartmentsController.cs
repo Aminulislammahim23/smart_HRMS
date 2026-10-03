@@ -1,4 +1,6 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using smartHRMS.Api.Auth;
 using smartHRMS.Application.Common.Models;
 using smartHRMS.Application.Features.Departments;
 using smartHRMS.Application.Features.Departments.Dtos;
@@ -35,6 +37,7 @@ public class DepartmentsController : ControllerBase
         return Ok(ApiResponse<DepartmentDto>.Ok(department, "Department retrieved successfully."));
     }
 
+    [Authorize(Policy = Policies.HrOrAdmin)]
     [HttpPost]
     [ProducesResponseType(typeof(ApiResponse<DepartmentDto>), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
@@ -48,6 +51,7 @@ public class DepartmentsController : ControllerBase
             ApiResponse<DepartmentDto>.Ok(department, "Department created successfully."));
     }
 
+    [Authorize(Policy = Policies.HrOrAdmin)]
     [HttpPut("{id:guid}")]
     [ProducesResponseType(typeof(ApiResponse<DepartmentDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
@@ -60,6 +64,7 @@ public class DepartmentsController : ControllerBase
     }
 
     /// <summary>Soft delete: deactivates the department (no row is removed). Returns 409 while active or on-leave employees are assigned to it.</summary>
+    [Authorize(Policy = Policies.HrOrAdmin)]
     [HttpDelete("{id:guid}")]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]

@@ -1,4 +1,7 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using smartHRMS.Api.Auth;
+using smartHRMS.Application.Features.Employees;
 using smartHRMS.Application.Common.Models;
 using smartHRMS.Application.Features.EmployeeEducations;
 using smartHRMS.Application.Features.EmployeeEducations.Dtos;
@@ -13,10 +16,12 @@ namespace smartHRMS.Api.Controllers;
 public class EmployeeEducationsController : ControllerBase
 {
     private readonly IEmployeeEducationService _service;
+    private readonly IEmployeeAccess _access;
 
-    public EmployeeEducationsController(IEmployeeEducationService service)
+    public EmployeeEducationsController(IEmployeeEducationService service, IEmployeeAccess access)
     {
         _service = service;
+        _access = access;
     }
 
     [HttpGet]
@@ -24,6 +29,7 @@ public class EmployeeEducationsController : ControllerBase
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
     public async Task<ActionResult<ApiResponse<List<EmployeeEducationDto>>>> GetAll(Guid employeeId, CancellationToken cancellationToken)
     {
+        _access.EnsureCanViewPrivate(employeeId);
         var educations = await _service.GetAllAsync(employeeId, cancellationToken);
         return Ok(ApiResponse<List<EmployeeEducationDto>>.Ok(educations, "Education records retrieved successfully."));
     }
@@ -33,10 +39,12 @@ public class EmployeeEducationsController : ControllerBase
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
     public async Task<ActionResult<ApiResponse<EmployeeEducationDto>>> GetById(Guid employeeId, Guid id, CancellationToken cancellationToken)
     {
+        _access.EnsureCanViewPrivate(employeeId);
         var education = await _service.GetByIdAsync(employeeId, id, cancellationToken);
         return Ok(ApiResponse<EmployeeEducationDto>.Ok(education, "Education record retrieved successfully."));
     }
 
+    [Authorize(Policy = Policies.HrOrAdmin)]
     [HttpPost]
     [ProducesResponseType(typeof(ApiResponse<EmployeeEducationDto>), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
@@ -49,6 +57,7 @@ public class EmployeeEducationsController : ControllerBase
         return CreatedAtAction(nameof(GetById), new { employeeId, id = education.Id }, ApiResponse<EmployeeEducationDto>.Ok(education, "Education record created successfully."));
     }
 
+    [Authorize(Policy = Policies.HrOrAdmin)]
     [HttpPut("{id:guid}")]
     [ProducesResponseType(typeof(ApiResponse<EmployeeEducationDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
@@ -61,6 +70,7 @@ public class EmployeeEducationsController : ControllerBase
         return Ok(ApiResponse<EmployeeEducationDto>.Ok(education, "Education record updated successfully."));
     }
 
+    [Authorize(Policy = Policies.HrOrAdmin)]
     [HttpDelete("{id:guid}")]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]

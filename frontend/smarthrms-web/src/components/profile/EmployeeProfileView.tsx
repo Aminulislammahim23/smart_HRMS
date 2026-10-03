@@ -26,6 +26,7 @@ import { EmergencyContactForm } from './EmergencyContactForm'
 import { ExperienceForm } from './ExperienceForm'
 import { PersonalDetailsSection } from './PersonalDetailsSection'
 import { ProfileRecordSection } from './ProfileRecordSection'
+import { ProfileEditingContext } from './profileEditing'
 
 type TabId = 'overview' | 'personal' | 'addresses' | 'contacts' | 'education' | 'experience' | 'documents'
 
@@ -51,6 +52,8 @@ interface EmployeeProfileViewProps {
   /** Reloads the profile after any section changes. */
   onChanged: () => void
   actions?: ReactNode
+  /** Hides every add/edit/delete control (the API refuses those changes for non-HR users anyway). */
+  readOnly?: boolean
 }
 
 function Meta({ icon: Icon, children }: { icon: LucideIcon; children: ReactNode }) {
@@ -62,7 +65,7 @@ function Meta({ icon: Icon, children }: { icon: LucideIcon; children: ReactNode 
   )
 }
 
-export function EmployeeProfileView({ profile, onChanged, actions }: EmployeeProfileViewProps) {
+export function EmployeeProfileView({ profile, onChanged, actions, readOnly = false }: EmployeeProfileViewProps) {
   const [params, setParams] = useSearchParams()
   const requestedTab = params.get('tab')
   const tab: TabId = TABS.some((t) => t.id === requestedTab) ? (requestedTab as TabId) : 'overview'
@@ -81,7 +84,7 @@ export function EmployeeProfileView({ profile, onChanged, actions }: EmployeePro
     )
   }
 
-  return (
+  const content = (
     <div className="flex flex-col gap-6">
       <div className="card bg-base-100 shadow-sm">
         <div className="card-body flex-col gap-5 sm:flex-row sm:items-center">
@@ -242,4 +245,6 @@ export function EmployeeProfileView({ profile, onChanged, actions }: EmployeePro
       </div>
     </div>
   )
+
+  return <ProfileEditingContext.Provider value={!readOnly}>{content}</ProfileEditingContext.Provider>
 }

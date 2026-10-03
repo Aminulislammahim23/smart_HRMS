@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using smartHRMS.Application.Interfaces;
 using smartHRMS.Domain.Entities;
+using smartHRMS.Domain.Enums;
 using smartHRMS.Infrastructure.Persistence;
 
 namespace smartHRMS.Infrastructure.Repositories;
@@ -19,6 +20,7 @@ public class EmployeeRepository : IEmployeeRepository
         return await _dbContext.Employees
             .Include(e => e.Department)
             .Include(e => e.Designation)
+            .Include(e => e.Manager)
             .FirstOrDefaultAsync(e => e.Id == id, cancellationToken);
     }
 
@@ -27,6 +29,7 @@ public class EmployeeRepository : IEmployeeRepository
         return await _dbContext.Employees
             .Include(e => e.Department)
             .Include(e => e.Designation)
+            .Include(e => e.Manager)
             .AsNoTracking()
             .OrderBy(e => e.EmployeeCode)
             .ToListAsync(cancellationToken);
@@ -52,6 +55,29 @@ public class EmployeeRepository : IEmployeeRepository
     public async Task<bool> ExistsAsync(Guid id, CancellationToken cancellationToken)
     {
         return await _dbContext.Employees.AnyAsync(e => e.Id == id, cancellationToken);
+    }
+
+    public async Task<List<Guid>> GetDirectReportIdsAsync(Guid managerId, CancellationToken cancellationToken)
+    {
+        return await _dbContext.Employees
+            .Where(e => e.ManagerId == managerId)
+            .Select(e => e.Id)
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<List<Employee>> GetPayrollCandidatesAsync(DateOnly periodEnd, CancellationToken cancellationToken)
+    {
+        var joinedBefore = periodEnd.AddDays(1).ToDateTime(TimeOnly.MinValue);
+        var current = new[] { EmployeeStatus.Active, EmployeeStatus.OnLeave };
+
+        return await _dbContext.Employees
+            .AsNoTracking()
+            .Include(e => e.Department)
+            .Include(e => e.Designation)
+            .Include(e => e.SalaryStructure)
+            .Where(e => current.Contains(e.Status) && e.JoiningDate < joinedBefore)
+            .OrderBy(e => e.EmployeeCode)
+            .ToListAsync(cancellationToken);
     }
 
     public async Task<bool> EmployeeCodeExistsAsync(string employeeCode, Guid? excludeId, CancellationToken cancellationToken)

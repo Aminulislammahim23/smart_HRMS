@@ -8,11 +8,13 @@ import { PageHeader } from '../../components/common/PageHeader'
 import { EmployeeStatusBadge } from '../../components/common/StatusBadge'
 import { EmployeePhoto } from '../../components/employee/EmployeePhoto'
 import { useApi } from '../../hooks/useApi'
+import { useAuth } from '../../hooks/useAuth'
 import { getDepartments } from '../../services/departmentService'
 import { getDesignations } from '../../services/designationService'
 import { getEmployees } from '../../services/employeeService'
 import { EMPLOYEE_STATUSES } from '../../types/employee'
 import { enumLabel, formatDate } from '../../utils/formatters'
+import EmployeeHome from './EmployeeHome'
 
 interface StatCardProps {
   label: string
@@ -39,8 +41,14 @@ function StatCard({ label, value, hint, icon: Icon, to }: StatCardProps) {
   )
 }
 
-/** Everything here is computed from the live employee, department and designation lists. */
+/** HR and Admin get the workforce overview; everyone else gets their own workspace. */
 export default function Dashboard() {
+  const { hasRole } = useAuth()
+  return hasRole('HR', 'Admin') ? <WorkforceDashboard /> : <EmployeeHome />
+}
+
+/** Everything here is computed from the live employee, department and designation lists. */
+function WorkforceDashboard() {
   const load = useCallback(
     (signal: AbortSignal) => Promise.all([getEmployees(signal), getDepartments(signal), getDesignations(signal)]),
     [],

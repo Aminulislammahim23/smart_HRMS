@@ -1,4 +1,7 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using smartHRMS.Api.Auth;
+using smartHRMS.Application.Features.Employees;
 using smartHRMS.Application.Common.Models;
 using smartHRMS.Application.Features.EmployeePersonalDetails;
 using smartHRMS.Application.Features.EmployeePersonalDetails.Dtos;
@@ -13,10 +16,12 @@ namespace smartHRMS.Api.Controllers;
 public class EmployeePersonalDetailsController : ControllerBase
 {
     private readonly IEmployeePersonalDetailsService _service;
+    private readonly IEmployeeAccess _access;
 
-    public EmployeePersonalDetailsController(IEmployeePersonalDetailsService service)
+    public EmployeePersonalDetailsController(IEmployeePersonalDetailsService service, IEmployeeAccess access)
     {
         _service = service;
+        _access = access;
     }
 
     [HttpGet]
@@ -24,11 +29,13 @@ public class EmployeePersonalDetailsController : ControllerBase
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
     public async Task<ActionResult<ApiResponse<EmployeePersonalDetailsDto>>> Get(Guid employeeId, CancellationToken cancellationToken)
     {
+        _access.EnsureCanViewPrivate(employeeId);
         var details = await _service.GetAsync(employeeId, cancellationToken);
         return Ok(ApiResponse<EmployeePersonalDetailsDto>.Ok(details, "Personal details retrieved successfully."));
     }
 
     /// <summary>Creates the personal details. 409 if they already exist (use PUT).</summary>
+    [Authorize(Policy = Policies.HrOrAdmin)]
     [HttpPost]
     [ProducesResponseType(typeof(ApiResponse<EmployeePersonalDetailsDto>), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
@@ -41,6 +48,7 @@ public class EmployeePersonalDetailsController : ControllerBase
         return CreatedAtAction(nameof(Get), new { employeeId }, ApiResponse<EmployeePersonalDetailsDto>.Ok(details, "Personal details created successfully."));
     }
 
+    [Authorize(Policy = Policies.HrOrAdmin)]
     [HttpPut]
     [ProducesResponseType(typeof(ApiResponse<EmployeePersonalDetailsDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
@@ -53,6 +61,7 @@ public class EmployeePersonalDetailsController : ControllerBase
         return Ok(ApiResponse<EmployeePersonalDetailsDto>.Ok(details, "Personal details updated successfully."));
     }
 
+    [Authorize(Policy = Policies.HrOrAdmin)]
     [HttpDelete]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]

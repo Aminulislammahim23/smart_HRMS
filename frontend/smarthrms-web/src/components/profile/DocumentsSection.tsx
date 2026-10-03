@@ -11,9 +11,11 @@ import { DocumentTable } from '../documents/DocumentTable'
 import { DocumentUploadModal } from '../documents/DocumentUploadModal'
 import { EMPTY_DOCUMENT_FILTERS, filterDocuments } from '../documents/filterDocuments'
 import { useDocumentActions } from '../documents/useDocumentActions'
+import { useCanEditProfile } from './profileEditing'
 
 /** Documents tab of the employee profile: the shared document list for one employee. */
 export function DocumentsSection({ employeeId, onChanged }: { employeeId: string; onChanged: () => void }) {
+  const canEdit = useCanEditProfile()
   const [filters, setFilters] = useState<DocumentFilterValues>(EMPTY_DOCUMENT_FILTERS)
   const [uploading, setUploading] = useState(false)
 
@@ -36,12 +38,16 @@ export function DocumentsSection({ employeeId, onChanged }: { employeeId: string
             <p className="text-sm text-base-content/60">NID, passport, certificates, CV, letters and contracts. Stored privately.</p>
           </div>
           <div className="flex items-center gap-2">
-            <Link to={`/documents/${employeeId}`} className="btn btn-ghost btn-sm">
-              <ExternalLink className="size-4" /> Open in Documents
-            </Link>
-            <button type="button" className="btn btn-primary btn-sm" onClick={() => setUploading(true)}>
-              <Upload className="size-4" /> Upload
-            </button>
+            {canEdit && (
+              <>
+                <Link to={`/documents/${employeeId}`} className="btn btn-ghost btn-sm">
+                  <ExternalLink className="size-4" /> Open in Documents
+                </Link>
+                <button type="button" className="btn btn-primary btn-sm" onClick={() => setUploading(true)}>
+                  <Upload className="size-4" /> Upload
+                </button>
+              </>
+            )}
           </div>
         </div>
 
@@ -59,7 +65,7 @@ export function DocumentsSection({ employeeId, onChanged }: { employeeId: string
             description="Upload NID, passport, certificates, CV and other HR documents."
           />
         ) : (
-          <DocumentTable documents={visible} actions={actions} />
+          <DocumentTable documents={visible} actions={actions} canManage={canEdit} />
         )}
       </div>
 

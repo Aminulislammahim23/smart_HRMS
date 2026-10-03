@@ -19,6 +19,9 @@ export interface Employee {
   departmentName: string | null
   designationId: string
   designationName: string | null
+  /** Line manager (reviews leave); null when none. */
+  managerId: string | null
+  managerName: string | null
   employmentType: EmploymentType
   basicSalary: number | null
   status: EmployeeStatus

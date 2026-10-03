@@ -1,8 +1,10 @@
 import { lazy } from 'react'
 import { Navigate, Route, Routes } from 'react-router-dom'
+import { useAuth } from '../hooks/useAuth'
 import AuthLayout from '../layouts/AuthLayout'
 import DashboardLayout from '../layouts/DashboardLayout'
-import { ProtectedRoute } from './ProtectedRoute'
+import type { UserRole } from '../types/auth'
+import { ProtectedRoute, RoleRoute } from './ProtectedRoute'
 
 // Pages load on demand so the first screen doesn't download the whole app.
 const Login = lazy(() => import('../pages/auth/Login'))
@@ -24,8 +26,32 @@ const DocumentDetailsPage = lazy(() => import('../pages/documents/DocumentDetail
 const AttendanceDashboardPage = lazy(() => import('../pages/attendance/AttendanceDashboardPage'))
 const AttendanceListPage = lazy(() => import('../pages/attendance/AttendanceListPage'))
 const EmployeeAttendancePage = lazy(() => import('../pages/attendance/EmployeeAttendancePage'))
+const MyLeavePage = lazy(() => import('../pages/leave/MyLeavePage'))
+const LeaveApprovalsPage = lazy(() => import('../pages/leave/LeaveApprovalsPage'))
+const PayrollDashboardPage = lazy(() => import('../pages/payroll/PayrollDashboardPage'))
+const PayrollPeriodsPage = lazy(() => import('../pages/payroll/PayrollPeriodsPage'))
+const PayrollCreatePage = lazy(() => import('../pages/payroll/PayrollCreatePage'))
+const PayrollPeriodDetailsPage = lazy(() => import('../pages/payroll/PayrollPeriodDetailsPage'))
+const PayrollRecordsPage = lazy(() => import('../pages/payroll/PayrollRecordsPage'))
+const PayrollApprovalPage = lazy(() => import('../pages/payroll/PayrollApprovalPage'))
+const PayslipPage = lazy(() => import('../pages/payroll/PayslipPage'))
+const MyPayrollPage = lazy(() => import('../pages/payroll/MyPayrollPage'))
+const SalaryStructuresPage = lazy(() => import('../pages/payroll/SalaryStructuresPage'))
+const UsersPage = lazy(() => import('../pages/users/UsersPage'))
 const NotFound = lazy(() => import('../pages/NotFound'))
 
+const HR: UserRole[] = ['HR', 'Admin']
+
+/** /attendance/me → the signed-in employee's own month view. */
+function MyAttendanceRedirect() {
+  const { user } = useAuth()
+  return <Navigate to={`/attendance/employee/${user?.employeeId}`} replace />
+}
+
+/**
+ * Route guards decide only what the browser shows. Every API behind these pages checks the same role (and
+ * ownership) on the server, so typing a URL can't bypass them.
+ */
 export function AppRoutes() {
   return (
     <Routes>
@@ -38,28 +64,57 @@ export function AppRoutes() {
           <Route index element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard" element={<Dashboard />} />
 
-          <Route path="/employees" element={<EmployeeList />} />
-          <Route path="/employees/create" element={<EmployeeCreate />} />
-          <Route path="/employees/:id" element={<EmployeeDetails />} />
-          <Route path="/employees/:id/edit" element={<EmployeeEdit />} />
+          {/* Self-service: any signed-in user linked to an employee. */}
+          <Route element={<RoleRoute requireEmployee />}>
+            <Route path="/profile" element={<MyProfile />} />
+            <Route path="/attendance/me" element={<MyAttendanceRedirect />} />
+            <Route path="/leave" element={<MyLeavePage />} />
+            <Route path="/payroll/my" element={<MyPayrollPage />} />
+          </Route>
 
-          <Route path="/departments" element={<DepartmentList />} />
-          <Route path="/departments/create" element={<DepartmentCreate />} />
-          <Route path="/departments/:id/edit" element={<DepartmentEdit />} />
-
-          <Route path="/designations" element={<DesignationList />} />
-          <Route path="/designations/create" element={<DesignationCreate />} />
-          <Route path="/designations/:id/edit" element={<DesignationEdit />} />
-
-          <Route path="/documents" element={<DocumentListPage />} />
-          <Route path="/documents/:employeeId" element={<EmployeeDocumentsPage />} />
-          <Route path="/documents/:employeeId/:documentId" element={<DocumentDetailsPage />} />
-
-          <Route path="/attendance" element={<AttendanceDashboardPage />} />
-          <Route path="/attendance/records" element={<AttendanceListPage />} />
+          {/* The server allows the employee, their manager, and HR/Admin. */}
           <Route path="/attendance/employee/:employeeId" element={<EmployeeAttendancePage />} />
+          {/* The server allows the employee (approved/paid only) and HR/Admin. */}
+          <Route path="/payroll/payslip/:id" element={<PayslipPage />} />
 
-          <Route path="/profile" element={<MyProfile />} />
+          <Route element={<RoleRoute roles={['Manager', 'HR', 'Admin']} />}>
+            <Route path="/leave/approvals" element={<LeaveApprovalsPage />} />
+          </Route>
+
+          <Route element={<RoleRoute roles={HR} />}>
+            <Route path="/employees" element={<EmployeeList />} />
+            <Route path="/employees/create" element={<EmployeeCreate />} />
+            <Route path="/employees/:id" element={<EmployeeDetails />} />
+            <Route path="/employees/:id/edit" element={<EmployeeEdit />} />
+
+            <Route path="/departments" element={<DepartmentList />} />
+            <Route path="/departments/create" element={<DepartmentCreate />} />
+            <Route path="/departments/:id/edit" element={<DepartmentEdit />} />
+
+            <Route path="/designations" element={<DesignationList />} />
+            <Route path="/designations/create" element={<DesignationCreate />} />
+            <Route path="/designations/:id/edit" element={<DesignationEdit />} />
+
+            <Route path="/documents" element={<DocumentListPage />} />
+            <Route path="/documents/:employeeId" element={<EmployeeDocumentsPage />} />
+            <Route path="/documents/:employeeId/:documentId" element={<DocumentDetailsPage />} />
+
+            <Route path="/attendance" element={<AttendanceDashboardPage />} />
+            <Route path="/attendance/records" element={<AttendanceListPage />} />
+
+            <Route path="/payroll" element={<PayrollDashboardPage />} />
+            <Route path="/payroll/periods" element={<PayrollPeriodsPage />} />
+            <Route path="/payroll/create" element={<PayrollCreatePage />} />
+            <Route path="/payroll/salaries" element={<SalaryStructuresPage />} />
+            <Route path="/payroll/:id" element={<PayrollPeriodDetailsPage />} />
+            <Route path="/payroll/:id/records" element={<PayrollRecordsPage />} />
+            <Route path="/payroll/:id/approval" element={<PayrollApprovalPage />} />
+          </Route>
+
+          <Route element={<RoleRoute roles={['Admin']} />}>
+            <Route path="/users" element={<UsersPage />} />
+          </Route>
+
           <Route path="*" element={<NotFound />} />
         </Route>
       </Route>

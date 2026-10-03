@@ -1,4 +1,7 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using smartHRMS.Api.Auth;
+using smartHRMS.Application.Features.Employees;
 using smartHRMS.Application.Common.Models;
 using smartHRMS.Application.Features.EmployeeAddresses;
 using smartHRMS.Application.Features.EmployeeAddresses.Dtos;
@@ -13,10 +16,12 @@ namespace smartHRMS.Api.Controllers;
 public class EmployeeAddressesController : ControllerBase
 {
     private readonly IEmployeeAddressService _service;
+    private readonly IEmployeeAccess _access;
 
-    public EmployeeAddressesController(IEmployeeAddressService service)
+    public EmployeeAddressesController(IEmployeeAddressService service, IEmployeeAccess access)
     {
         _service = service;
+        _access = access;
     }
 
     [HttpGet]
@@ -24,6 +29,7 @@ public class EmployeeAddressesController : ControllerBase
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
     public async Task<ActionResult<ApiResponse<List<EmployeeAddressDto>>>> GetAll(Guid employeeId, CancellationToken cancellationToken)
     {
+        _access.EnsureCanViewPrivate(employeeId);
         var addresses = await _service.GetAllAsync(employeeId, cancellationToken);
         return Ok(ApiResponse<List<EmployeeAddressDto>>.Ok(addresses, "Addresses retrieved successfully."));
     }
@@ -33,10 +39,12 @@ public class EmployeeAddressesController : ControllerBase
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
     public async Task<ActionResult<ApiResponse<EmployeeAddressDto>>> GetById(Guid employeeId, Guid id, CancellationToken cancellationToken)
     {
+        _access.EnsureCanViewPrivate(employeeId);
         var address = await _service.GetByIdAsync(employeeId, id, cancellationToken);
         return Ok(ApiResponse<EmployeeAddressDto>.Ok(address, "Address retrieved successfully."));
     }
 
+    [Authorize(Policy = Policies.HrOrAdmin)]
     [HttpPost]
     [ProducesResponseType(typeof(ApiResponse<EmployeeAddressDto>), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
@@ -49,6 +57,7 @@ public class EmployeeAddressesController : ControllerBase
         return CreatedAtAction(nameof(GetById), new { employeeId, id = address.Id }, ApiResponse<EmployeeAddressDto>.Ok(address, "Address created successfully."));
     }
 
+    [Authorize(Policy = Policies.HrOrAdmin)]
     [HttpPut("{id:guid}")]
     [ProducesResponseType(typeof(ApiResponse<EmployeeAddressDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
@@ -61,6 +70,7 @@ public class EmployeeAddressesController : ControllerBase
         return Ok(ApiResponse<EmployeeAddressDto>.Ok(address, "Address updated successfully."));
     }
 
+    [Authorize(Policy = Policies.HrOrAdmin)]
     [HttpDelete("{id:guid}")]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]

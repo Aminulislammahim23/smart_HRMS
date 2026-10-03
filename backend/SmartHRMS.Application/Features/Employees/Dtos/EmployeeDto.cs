@@ -29,6 +29,11 @@ public class EmployeeDto
 
     public string? DesignationName { get; set; }
 
+    /// <summary>The line manager (reviews leave), or null.</summary>
+    public Guid? ManagerId { get; set; }
+
+    public string? ManagerName { get; set; }
+
     /// <summary>FullTime, PartTime, Contract or Intern.</summary>
     public string EmploymentType { get; set; } = string.Empty;
 

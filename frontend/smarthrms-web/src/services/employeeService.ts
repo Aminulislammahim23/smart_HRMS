@@ -40,3 +40,8 @@ export function uploadEmployeePhoto(id: string, photo: File): Promise<Employee> 
 export function removeEmployeePhoto(id: string): Promise<Employee> {
   return unwrap(api.delete<ApiResponse<Employee>>(`/employees/${id}/photo`))
 }
+
+/** Sets (managerId) or clears (null) the employee's line manager (HR/Admin). */
+export function assignManager(id: string, managerId: string | null): Promise<Employee> {
+  return unwrap(api.put<ApiResponse<Employee>>(`/employees/${id}/manager`, { managerId }))
+}

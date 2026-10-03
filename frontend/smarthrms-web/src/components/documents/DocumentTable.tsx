@@ -14,9 +14,11 @@ interface DocumentTableProps {
   actions: DocumentActions
   /** When given, an Employee column is shown (cross-employee lists). */
   employeesById?: ReadonlyMap<string, Employee>
+  /** False hides edit and deactivate (read-only viewers such as an employee looking at their own documents). */
+  canManage?: boolean
 }
 
-export function DocumentTable({ documents, actions, employeesById }: DocumentTableProps) {
+export function DocumentTable({ documents, actions, employeesById, canManage = true }: DocumentTableProps) {
   // The Employee column needs room: on cross-employee lists the less important columns appear only on wide
   // screens, and below xl the document type moves into the name cell.
   const crossEmployee = employeesById !== undefined
@@ -99,12 +101,16 @@ export function DocumentTable({ documents, actions, employeesById }: DocumentTab
               >
                 {actions.downloadingId === d.id ? <span className="loading loading-spinner loading-xs" /> : <Download className="size-4" />}
               </button>
-              <button type="button" className="btn btn-ghost btn-xs btn-square" onClick={() => actions.edit(d)} title="Edit" aria-label={`Edit ${d.documentName}`}>
-                <Pencil className="size-4" />
-              </button>
-              <button type="button" className="btn btn-ghost btn-xs btn-square text-error" onClick={() => actions.deactivate(d)} title="Deactivate" aria-label={`Deactivate ${d.documentName}`}>
-                <Trash2 className="size-4" />
-              </button>
+              {canManage && (
+                <>
+                  <button type="button" className="btn btn-ghost btn-xs btn-square" onClick={() => actions.edit(d)} title="Edit" aria-label={`Edit ${d.documentName}`}>
+                    <Pencil className="size-4" />
+                  </button>
+                  <button type="button" className="btn btn-ghost btn-xs btn-square text-error" onClick={() => actions.deactivate(d)} title="Deactivate" aria-label={`Deactivate ${d.documentName}`}>
+                    <Trash2 className="size-4" />
+                  </button>
+                </>
+              )}
             </>
           )}
         </div>

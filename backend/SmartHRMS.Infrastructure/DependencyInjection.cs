@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using smartHRMS.Application.Interfaces;
 using smartHRMS.Infrastructure.Persistence;
 using smartHRMS.Infrastructure.Repositories;
+using smartHRMS.Infrastructure.Security;
 using smartHRMS.Infrastructure.Storage;
 
 namespace smartHRMS.Infrastructure;
@@ -23,6 +24,12 @@ public static class DependencyInjection
         services.AddScoped<IEmployeeDocumentRepository, EmployeeDocumentRepository>();
         services.AddScoped(typeof(IEmployeeOwnedRepository<>), typeof(EmployeeOwnedRepository<>));
         services.AddScoped<IAttendanceRepository, AttendanceRepository>();
+        services.AddScoped<IUserRepository, UserRepository>();
+        services.AddScoped<ILeaveRequestRepository, LeaveRequestRepository>();
+        services.AddScoped<IPayrollRepository, PayrollRepository>();
+        services.AddScoped<IAuditLogger, AuditLogger>();
+        services.AddScoped<IAuditLogReader, AuditLogReader>();
+        services.AddSingleton<IPasswordHasher, Pbkdf2PasswordHasher>();
 
         services.AddSingleton<IFileStorageService>(new LocalFileStorageService(fileStorageRootPath));
         services.AddSingleton<IDocumentStorageService>(new LocalDocumentStorageService(documentStorageRootPath));

@@ -16,6 +16,15 @@ public interface IEmployeeRepository
 
     Task<bool> ExistsAsync(Guid id, CancellationToken cancellationToken);
 
+    /// <summary>Ids of the employees whose manager is <paramref name="managerId"/>.</summary>
+    Task<List<Guid>> GetDirectReportIdsAsync(Guid managerId, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Read-only. Current employees (Active or OnLeave) who joined on or before <paramref name="periodEnd"/>, with
+    /// department, designation and salary structure loaded, ordered by employee code.
+    /// </summary>
+    Task<List<Employee>> GetPayrollCandidatesAsync(DateOnly periodEnd, CancellationToken cancellationToken);
+
     Task<bool> EmployeeCodeExistsAsync(string employeeCode, Guid? excludeId, CancellationToken cancellationToken);
 
     Task<bool> EmailExistsAsync(string email, Guid? excludeId, CancellationToken cancellationToken);

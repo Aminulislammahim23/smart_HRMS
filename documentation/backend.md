@@ -1,8 +1,9 @@
 # SmartHRMS Backend Documentation
 
-> Describes the code, database and API **as they are after Day 13 (2026-09-30)**. Everything marked as implemented was
-> verified at runtime against the SQL Server database (see §22, §23 and §25). Planned work is listed only in §24 and is
-> clearly marked as not implemented.
+> Describes the code, database and API **as they are after Day 16 (2026-10-03)**. Everything marked as implemented was
+> verified at runtime against the SQL Server database (see §22, §23, §25 and §26). Planned work is listed only in §24
+> and is clearly marked as not implemented. Day 16 also delivered the authentication, leave and audit groundwork that
+> payroll depends on (§26.1–§26.4), because no earlier day had built it.
 
 ---
 
@@ -556,15 +557,37 @@ Validation always happens on the server; the frontend repeats the rules only for
 
 ## 17. Authentication & Authorization
 
-**Not implemented.** No authentication scheme, no login endpoint, no tokens, no roles or policies.
-`app.UseAuthorization()` is in the pipeline but has nothing to enforce, so **every endpoint is anonymous**, including
-salaries, identity numbers and HR documents. `ApplicationUser` exists in the database but is unused. Consequently no
-endpoint returns `401` or `403` (the envelope writer has messages for them, ready for when auth is added).
+**Implemented on Day 16** (details in §26.1). JWT bearer tokens issued by `POST /api/auth/login` for the existing
+`ApplicationUsers` table, with four roles: **Employee, Manager, HR, Admin**.
 
-**CORS** is the only access restriction, and it applies to browsers only: `Cors:AllowedOrigins` in
-`appsettings.Development.json` lists `http://localhost:5173` and `http://localhost:4173`; `appsettings.json` lists none.
+- **Every endpoint requires a signed-in user** (fallback authorization policy) except `GET /api/health`,
+  `POST /api/auth/login` and, in Development, `/openapi/v1.json` and `/swagger`.
+- Role policies on controllers (`HrOrAdmin`, `Admin`), and **the services check roles and ownership again**, so a
+  missing attribute cannot open data up. Request bodies can never change who the caller is (`ICurrentUser` reads the
+  validated token only).
+- Every request re-validates the token's account in the database: deactivating a user, changing their role or
+  password ends their existing sessions immediately (security stamp).
+- Passwords: PBKDF2-HMAC-SHA256, 210 000 iterations, per-password salt; 5 failed sign-ins lock the account for 15
+  minutes; unknown user, wrong password and inactive account all get the same message.
+- `401` and `403` use the standard envelope.
 
-Do not expose this API beyond a local development machine until authentication exists.
+| Area | Employee | Manager | HR | Admin |
+|---|---|---|---|---|
+| Own profile, documents, attendance, leave, payslips | read | read | read/write | read/write |
+| Direct reports: basic record (no salary), attendance, leave | — | read; approve/reject leave | all | all |
+| Employees, departments, designations, documents, attendance (write) | — | — | ✓ | ✓ |
+| Leave of anyone (approve/reject/cancel) | — | — | ✓ | ✓ |
+| Salary structures, payroll periods, calculation, records, submit | — | — | ✓ | ✓ |
+| Approve payroll, mark paid | — | — | — | ✓ |
+| Users & roles, audit log | — | — | — | ✓ |
+
+**CORS** still applies to browsers: `Cors:AllowedOrigins` in `appsettings.Development.json` lists
+`http://localhost:5173` and `http://localhost:4173`; `appsettings.json` lists none.
+
+**Configuration secrets** (never in `appsettings.json`): `Jwt:SigningKey` (≥ 32 characters; required outside
+Development; in Development a temporary key is generated and sign-ins end on restart) and the one-time
+`Auth:BootstrapAdmin:Username` / `:Password`. Use user-secrets (the API project has a `UserSecretsId`) or environment
+variables (`Jwt__SigningKey`, `Auth__BootstrapAdmin__Username`, `Auth__BootstrapAdmin__Password`).
 
 ---
 
@@ -618,7 +641,7 @@ dotnet ef migrations has-pending-model-changes --project SmartHRMS.Infrastructur
 dotnet ef migrations remove --project SmartHRMS.Infrastructure --startup-project smartHRMS.Api
 ```
 
-Applied migrations (all 8 applied; no pending model changes):
+Applied migrations (all 9 applied; no pending model changes):
 
 | # | Migration | Change |
 |---|---|---|
@@ -630,9 +653,10 @@ Applied migrations (all 8 applied; no pending model changes):
 | 6 | `AddEmployeeProfileRecords` (Day 11) | five profile tables; drops the flat address/gender/blood-group/emergency-contact columns (all empty when applied) |
 | 7 | `AddEmployeeDocumentDetails` (Day 12) | `DocumentName` (backfilled from `FileName`), `IssueDate`, `ExpiryDate` |
 | 8 | `AddAttendance` (Day 13) | creates `Attendances` (FK to `Employees`, NO ACTION), unique (`EmployeeId`, `AttendanceDate`), index on `AttendanceDate`. Purely additive; no existing table touched |
+| 9 | `AddAuthLeaveAuditPayroll` (Day 16) | `ApplicationUsers`: `Role`, `SecurityStamp`, lockout and last-login columns, `EmployeeId` nullable with a filtered unique index, `PasswordHash` → `nvarchar(256)` (table was empty); `Employees.ManagerId` (self FK + check); new tables `LeaveRequests`, `AuditLogs`, `EmployeeSalaryStructures`, `PayrollPeriods`, `PayrollRecords` (see §26.5). Additive for every table that held data |
 
 Before each schema change since Day 9 a verified copy-only backup was taken
-(`SmartHRMSDB_before_Day9/10/11/12/13_*.bak` in the SQL Server backup folder). Migrations are only generated after a
+(`SmartHRMSDB_before_Day9/10/11/12/13/16_*.bak` in the SQL Server backup folder). Migrations are only generated after a
 domain change; applied migrations are never edited.
 
 > **Windows Smart App Control:** on this machine a freshly built, unsigned `smartHRMS.*.dll` can be blocked
@@ -652,8 +676,12 @@ domain change; applied migrations are never edited.
 
 ## 21. API Endpoint Reference
 
-Base URL (Development): `http://localhost:5099`. **Auth: none for every endpoint.** Common errors on every endpoint
-with a body: `400` (validation), `500` (unexpected). `{id}` values are GUIDs.
+Base URL (Development): `http://localhost:5099`. **Auth: `Authorization: Bearer <token>` on every endpoint except
+health and login** (role rules in §17; a missing or expired token gives `401`, a forbidden action `403`). Common
+errors on every endpoint with a body: `400` (validation), `500` (unexpected). `{id}` values are GUIDs. Since Day 16,
+reads of one employee's data (`/api/employees/{id}`, profile, profile records, documents, attendance) are allowed for
+the employee themself and HR/Admin (managers: basic record without salary, and attendance, of direct reports);
+every write of the Day 1–13 modules is HR/Admin.
 
 | Method | Endpoint | Purpose | Request | Response | Status codes |
 |---|---|---|---|---|---|
@@ -698,6 +726,32 @@ with a body: `400` (validation), `500` (unexpected). `{id}` values are GUIDs.
 | POST | `/api/attendance/check-in` | check in now | `CheckInDto` | `AttendanceDto` | 200, 400, 404, 409 |
 | POST | `/api/attendance/check-out` | check out now | `CheckOutDto` | `AttendanceDto` | 200, 400, 404, 409 |
 | GET | `/api/employees/{employeeId}/attendance[?date&startDate&endDate&status]` | employee history | query | `AttendanceDto[]` | 200, 400, 404 |
+| POST | `/api/auth/login` | sign in (anonymous) | `LoginDto` | `LoginResultDto` (token, expiry, user) | 200, 400, 401 |
+| GET | `/api/auth/me` | signed-in user | — | `CurrentUserDto` | 200, 401 |
+| POST | `/api/auth/change-password` | own password (ends sessions) | `ChangePasswordDto` | message | 200, 400 |
+| GET/POST | `/api/users` | list / create accounts (Admin) | `CreateUserDto` | `UserDto` | 200, 201, 400, 409 |
+| GET/PUT | `/api/users/{id}` | one account / role, active, employee (Admin) | `UpdateUserDto` | `UserDto` | 200, 400, 404, 409 |
+| POST | `/api/users/{id}/reset-password` | reset + unlock (Admin) | `ResetPasswordDto` | message | 200, 400, 404 |
+| PUT | `/api/employees/{id}/manager` | set/clear line manager (HR/Admin) | `AssignManagerDto` | `EmployeeDto` | 200, 400, 404 |
+| GET | `/api/leave/types` | leave types and paid flag | — | `LeaveTypeDto[]` | 200 |
+| GET | `/api/leave/requests[?scope&employeeId&status&leaveType&startDate&endDate]` | visible requests | query | `LeaveRequestDto[]` | 200, 400, 403 |
+| GET | `/api/leave/requests/{id}` | one request | — | `LeaveRequestDto` | 200, 404 |
+| POST | `/api/leave/requests` | apply | `CreateLeaveRequestDto` | `LeaveRequestDto` | 201, 400, 403, 404, 409 |
+| POST | `/api/leave/requests/{id}/approve` \| `reject` \| `cancel` | decide | `ReviewLeaveRequestDto` (optional) | `LeaveRequestDto` | 200, 403, 404, 409 |
+| GET | `/api/payroll/salary-structures` | all salaries (HR/Admin) | — | `SalaryStructureDto[]` | 200 |
+| GET/PUT | `/api/employees/{employeeId}/salary-structure` | one salary (self or HR) / replace (HR/Admin) | `UpdateSalaryStructureDto` | `SalaryStructureDto` | 200, 400, 403, 404 |
+| GET/POST | `/api/payroll/periods[?year&status]` | list / create period (HR/Admin) | `CreatePayrollPeriodDto` | `PayrollPeriodDto` | 200, 201, 400, 409 |
+| GET/PUT/DELETE | `/api/payroll/periods/{id}` | one / edit / delete (Draft only) | `UpdatePayrollPeriodDto` | `PayrollPeriodDto` | 200, 400, 404, 409 |
+| POST | `/api/payroll/calculate/{periodId}` | calculate or recalculate (HR/Admin) | — | `PayrollCalculationResultDto` | 200, 400, 404, 409 |
+| GET | `/api/payroll/periods/{periodId}/records[?search&departmentId&designationId&status]` | records (HR/Admin) | query | `PayrollRecordDto[]` | 200, 400, 404 |
+| GET/PUT | `/api/payroll/records/{id}` | one record (owner after approval, HR/Admin) / manual amounts (HR/Admin) | `UpdatePayrollRecordDto` | `PayrollRecordDto` | 200, 400, 404, 409 |
+| POST | `/api/payroll/{periodId}/submit` | Calculated → PendingApproval (HR/Admin) | — | `PayrollPeriodDto` | 200, 400, 404, 409 |
+| POST | `/api/payroll/{periodId}/approve` | → Approved (Admin) | — | `PayrollPeriodDto` | 200, 403, 404, 409 |
+| POST | `/api/payroll/{periodId}/mark-paid` | → Paid (Admin) | — | `PayrollPeriodDto` | 200, 404, 409 |
+| POST | `/api/payroll/{periodId}/cancel` | → Cancelled (HR/Admin) | `CancelPayrollDto` (optional) | `PayrollPeriodDto` | 200, 404, 409 |
+| GET | `/api/payroll/employee/{employeeId}` | payroll history (own: Approved/Paid only) | — | `PayrollRecordDto[]` | 200, 403, 404 |
+| GET | `/api/payroll/payslip/{recordId}` | payslip (own after approval, HR/Admin) | — | `PayslipDto` | 200, 404 |
+| GET | `/api/audit-logs[?entityType&entityId&action&take]` | audit log (Admin) | query | `AuditLogDto[]` | 200, 400 |
 
 Development-only: `GET /openapi/v1.json` (OpenAPI document) and `/swagger` (Swagger UI).
 
@@ -713,11 +767,14 @@ dotnet test smartHRMS.slnx
 dotnet ef migrations has-pending-model-changes --project SmartHRMS.Infrastructure --startup-project smartHRMS.Api
 ```
 
-| Kind | What | Result (Day 1–12 audit, re-run on Day 13) |
+| Kind | What | Result (latest run: Day 16, 2026-10-03) |
 |---|---|---|
 | Build | `dotnet build` | 0 warnings, 0 errors |
-| Unit tests | 215 xUnit tests (services, DTO validation, envelope, photo, documents, profile records, attendance) with in-memory fakes and a fake `TimeProvider` | 215 / 215 passed |
-| Migrations | `migrations list`, `has-pending-model-changes`, live schema query | 8 / 8 applied, no drift, schema matches configuration |
+| Unit tests | 282 xUnit tests (services, DTO validation, envelope, photo, documents, profile records, attendance; Day 16: payroll calculator, payroll workflow and access, leave, sign-in, users, managers) with in-memory fakes and a fake `TimeProvider` | 282 / 282 passed |
+| Migrations | `migrations list`, live schema query | 9 / 9 applied, schema matches configuration |
+| Runtime API (Day 16) | sign-in, lockout, sessions, roles on every module, users, managers, leave, salary, payroll workflow, payslips, audit, DB constraints | 249 / 249 |
+| Browser (Day 16 frontend) | sign-in, role guards, leave, salary, payroll workflow, payslip print, session end, mobile/tablet layout | 28 / 28, no JS exceptions or console errors |
+| Day 1–13 regression with authentication on | the suites below re-run as Admin against the Day 16 build | all passed except the OpenAPI route count (53 routes now, 0 duplicates; the check expected 26) |
 | Runtime API (Day 13) | attendance check-in/out, CRUD, filters, history, validation, DB constraints, parallel check-ins, Swagger | 137 / 137 |
 | Runtime API (Day 1–10 regression) | CRUD, relationships, photo, documents, envelope, errors | 193 / 193 |
 | Runtime API (Day 11) | personal details, addresses, contacts, education, experience, profile | 167 / 167 |
@@ -734,7 +791,7 @@ The repository itself contains only unit tests (see §24).
 
 ---
 
-## 23. Day 1–13 Completion Matrix
+## 23. Day 1–16 Completion Matrix
 
 | Day | Feature | Status | Evidence |
 |-----|---------|--------|----------|
@@ -820,7 +877,19 @@ The repository itself contains only unit tests (see §24).
 | 13 | Filters (employee, date, range, status) and employee history | PASS | Day 13 suite |
 | 13 | Time zone handling (office date differs from UTC date) | PASS | live run at 21:32 UTC recorded the next Dhaka date; unit test for the same case |
 | 13 | Parallel check-ins | PASS | 5 parallel → 1 × 200, 4 × 409, one row |
-| 13 | Authentication / authorization for attendance | MISSING | no authentication exists in the project |
+| 13 | Authentication / authorization for attendance | PASS (Day 16) | HR/Admin for list and CRUD; own or HR for check-in/out; own, manager or HR for history (Day 16 suite) |
+| 16 | Authentication: login, JWT, lockout, session revocation, bootstrap Admin | PASS | Day 16 suite + unit tests |
+| 16 | Roles and server-side authorization on every module | PASS | Day 16 suite (403/404 for every forbidden case) |
+| 16 | Employee–manager relationship (no self, no loops) | PASS | Day 16 suite + unit tests |
+| 16 | Leave: apply, overlap, working days, manager/HR review, no self-approval, cancel, payroll lock | PASS | Day 16 suite + unit tests |
+| 16 | Audit log (sign-in, users, leave, salary change, payroll actions, payslip views; no amounts) | PASS | Day 16 suite |
+| 16 | Salary structure (basic + allowances + tax) | PASS | Day 16 suite |
+| 16 | Payroll periods (no overlap, no duplicate, ≤ 31 days, edit/delete Draft only) | PASS | Day 16 suite + unit tests |
+| 16 | Payroll calculation (formulas, proration, approved unpaid leave only, attendance read-only, transactional) | PASS | Day 16 suite + unit tests |
+| 16 | Workflow Draft → Calculated → PendingApproval → Approved → Paid; Cancelled | PASS | Day 16 suite + unit tests |
+| 16 | Approved/Paid payroll locked; Admin approves; nobody approves own salary | PASS | Day 16 suite + unit tests |
+| 16 | Payslip and employee history (own, after approval only) | PASS | Day 16 suite + browser suite |
+| 16 | DB constraints: unique (period, employee), non-negative amounts, filtered unique period dates, rowversion | PASS | direct SQL insert/update refused in the Day 16 suite |
 
 ---
 
@@ -828,7 +897,14 @@ The repository itself contains only unit tests (see §24).
 
 | Severity | Limitation | Impact |
 |---|---|---|
-| High | **No authentication or authorization** | Every endpoint, including salaries, NID/passport numbers, HR documents and attendance, is callable anonymously. Anyone can check in or out **for any employee id**. No user or role check. Not safe beyond a local machine |
+| Medium | No refresh tokens | Access tokens last 60 minutes (configurable); users sign in again afterwards. Tokens live in the browser's sessionStorage |
+| Medium | Profile photos are public static files | `/uploads/...` is served without a token (an `<img>` can't send one); photo URLs are unguessable but not protected |
+| Medium | No leave balances or entitlements | Any number of paid leave days can be requested; HR/managers decide. No carry-over or accrual |
+| Medium | Weekends only, no public holidays | `WorkCalendar:WeekendDays` (default Friday + Saturday) decides working days for leave and payroll; holidays count as working days |
+| Medium | Payroll: fixed monthly tax, no tax slabs; no overtime module | Tax is a monthly amount on the salary structure; overtime, bonus, advance and loan are entered per record by HR |
+| Medium | Payroll: leavers are not paid in a final settlement | Only Active/OnLeave employees are calculated; an employee who left mid-month needs a manual adjustment |
+| Low | Payroll approval needs a second Admin when the only Admin is also an employee in the payroll | The self-approval rule refuses approval of a payroll that contains your own salary |
+| Low | Absences are not deducted by default | `Payroll:DeductRecordedAbsences` turns on deduction of explicit Absent days; days without any attendance record are never deducted |
 | Medium | No pagination | Lists return every matching row. Attendance grows by one row per employee per day, so clients should always pass a date or range |
 | Low | Attendance: no overnight shifts | Check-in/out apply to one office date; a shift past midnight must be corrected by HR |
 | Low | Attendance: no weekends, holidays or leave integration | Absent/Leave are recorded explicitly; nothing is generated automatically for missing days |
@@ -844,9 +920,10 @@ The repository itself contains only unit tests (see §24).
 | Low | xUnit 2 is marked legacy | Tests work; migration to xUnit v3 is optional |
 | Info | Smart App Control on the development machine | May block freshly built DLLs, sometimes persistently (see §20) |
 
-**Not implemented (future work, not part of Day 1–13):** authentication (JWT tied to `ApplicationUser`) and role-based
-authorization; leave management, payroll, recruitment, performance modules; an attendance UI in the React frontend;
-cloud storage for photos and documents (the storage interfaces allow adding it without changing the Application layer).
+**Not implemented (future work):** refresh tokens and single sign-on; leave balances and holiday calendar; tax
+slabs, overtime tracking and payroll line-item tables (allowances/deductions beyond the fixed columns); PDF payslips
+(the payslip page is print-ready instead); recruitment and performance modules; cloud storage for photos and
+documents (the storage interfaces allow adding it without changing the Application layer).
 
 ---
 
@@ -919,3 +996,243 @@ filters, check-in/out buttons, details) needs no extra calls.
 
 Results: 46 new unit tests (215 / 215 total) and 137 / 137 live API checks. The Day 1–12 regression suites (193 +
 167 + 108 + 57 API checks and 59 browser checks) all passed against the Day 13 build.
+
+---
+
+## 26. Day 16 — Payroll Processing & Salary Management
+
+### 26.0 Module purpose and what had to be built first
+
+Payroll turns each employee's salary structure, attendance and approved leave into a monthly payroll record, takes it
+through review and approval, and gives the employee a payslip. The Day 15 and Day 16 payroll prompts both assumed
+authentication, roles, a Leave module (Day 14) and an audit log; **none of them existed** (Day 14's backend was never
+built, and `ApplicationUser` was an unused table). With the owner's approval they were built first, as the minimum
+payroll needs, inside the existing architecture: §26.1–§26.4. Day 15 and Day 16 payroll are delivered together as one
+module (§26.5 onward); where the two prompts differed, Day 16 was followed (period name and date range, statuses
+`Draft → Calculated → PendingApproval → Approved → Paid`, Admin approval).
+
+### 26.1 Authentication and roles
+
+- `ApplicationUser` (existing table) gained `Role` (Employee, Manager, HR, Admin), `SecurityStamp`,
+  `FailedLoginCount`, `LockoutEndAt` and `LastLoginAt`; `EmployeeId` became optional (an Admin may have no employee).
+- `AuthService`: login (same message for unknown user, wrong password and inactive account; lockout after
+  `Auth:LockoutThreshold` = 5 failures for `Auth:LockoutMinutes` = 15), current user, change password.
+- `UserService` (Admin only): create, update role/active/employee, reset password. Employee and Manager accounts must
+  be linked to an employee; one account per employee; the last active Admin can't be demoted or deactivated; Admins
+  can't demote or deactivate themselves. A role, active-flag or password change ends existing sessions.
+- First Admin: on startup, if no Admin exists and `Auth:BootstrapAdmin:Username`/`:Password` are configured
+  (user-secrets or environment variables), the account is created and a warning is logged. Remove the setting
+  afterwards.
+- API: `smartHRMS.Api/Auth` (`AuthenticationSetup`, `JwtTokenService`, `HttpCurrentUser`, `Policies`). Application:
+  `ICurrentUser` + `CurrentUserExtensions` (`EnsureHrOrAdmin`, `EnsureAdmin`, `EnsureSelfOrHrOrAdmin`) and
+  `IEmployeeAccess` for the existing modules.
+- Permission matrix: §17.
+
+### 26.2 Employee–manager relationship
+
+`Employees.ManagerId` is an optional self reference (NO ACTION, check `ManagerId <> Id`). It is set with
+`PUT /api/employees/{id}/manager` (HR/Admin). Rules: the manager must exist and be current; no self; no loops
+(A → B → A). A manager reviews the leave of direct reports and sees their basic record (without salary) and
+attendance, nothing else.
+
+### 26.3 Leave (the minimum Day 14 functionality payroll needs)
+
+`LeaveRequest`: employee, `LeaveType` (Annual, Sick, Casual — paid; Unpaid), start/end date, `TotalDays` (working
+days, calculated by the server), reason, `LeaveStatus` (Pending, Approved, Rejected, Cancelled), requested/reviewed by,
+review comment. Rules:
+
+- whole working days; at most 90 calendar days; not before joining;
+- no overlap with the employee's Pending/Approved leave (409);
+- Employees and Managers apply only for themselves; HR/Admin for anyone;
+- the direct manager, HR or Admin approve/reject Pending requests, but **nobody reviews their own**;
+- the owner cancels while Pending; HR/Admin also cancel Approved leave;
+- leave can't be approved or cancelled once payroll covering those dates is PendingApproval, Approved or Paid;
+- requests outside the caller's visibility are reported as 404.
+
+### 26.4 Audit log
+
+`AuditLogs` is append-only, with no FK, so failed sign-ins of unknown usernames are kept. `IAuditLogger.Add` stages an
+entry in the same `SaveChanges` as the change it describes. Logged: sign-in success/failure, password change/reset,
+user create/update, manager assignment, salary structure change (**without amounts**), leave
+requested/approved/rejected/cancelled, payroll period created/updated/deleted, calculated, record updated, submitted,
+approved, paid, cancelled, and payslip viewed. Read with `GET /api/audit-logs` (Admin).
+
+### 26.5 Database changes (migration `AddAuthLeaveAuditPayroll`)
+
+| Table | Key columns | Constraints and indexes |
+|---|---|---|
+| `EmployeeSalaryStructures` | `EmployeeId`, `HouseRent`, `MedicalAllowance`, `TransportAllowance`, `OtherAllowance`, `MonthlyTax` — `decimal(18,2)` | unique `EmployeeId`; FK → Employees (NO ACTION); check all ≥ 0 |
+| `PayrollPeriods` | `Name`, `StartDate`, `EndDate` (`date`), `Status`, `Notes`, `CreatedBy/CalculatedBy/SubmittedBy/ApprovedBy/PaidBy/CancelledByUserId` with matching `…At`, `RowVersion` | check `StartDate < EndDate`; **unique (`StartDate`, `EndDate`) where `Status <> 'Cancelled'`**; index `Status`; FKs → ApplicationUsers (NO ACTION); rowversion for concurrent status changes (409) |
+| `PayrollRecords` | `PayrollPeriodId`, `EmployeeId`, snapshot `EmployeeCode/Name/DepartmentName/DesignationName`; 15 money columns `decimal(18,2)`; 5 day columns `decimal(5,1)`; `Status`, `Remarks` | **unique (`PayrollPeriodId`, `EmployeeId`)**; check all earnings and deductions ≥ 0; FKs → PayrollPeriods, Employees (NO ACTION); index `EmployeeId` |
+| `LeaveRequests` | see §26.3 | check `StartDate <= EndDate`; indexes (`EmployeeId`, `StartDate`) and `Status`; FKs → Employees, ApplicationUsers |
+| `AuditLogs` | `UserId`, `Username`, `Action`, `EntityType`, `EntityId`, `Details`, `CreatedAt` | indexes `CreatedAt` and (`EntityType`, `EntityId`) |
+
+- The basic salary stays on `Employees.BasicSalary`, so it is stored in one place; the salary structure holds
+  allowances and tax.
+- Records copy the employee's name, code, department and designation, so an issued payslip never changes later.
+- Before the migration a verified copy-only backup was taken (`SmartHRMSDB_before_Day16_*.bak`).
+- Monetary values are always `decimal`, rounded to 2 places, halves away from zero (`Money.Round`).
+
+### 26.6 Relationships
+
+- Employee 1–0..1 SalaryStructure
+- Employee 1–n LeaveRequest
+- Employee 0..1–n Employee (manager)
+- PayrollPeriod 1–n PayrollRecord
+- Employee 1–n PayrollRecord (one per period)
+- ApplicationUser 0..1–1 Employee
+- ApplicationUser 1–n PayrollPeriod and LeaveRequest actions (by id)
+
+### 26.7 APIs and DTOs
+
+The endpoints are listed in §21 (the rows from `/api/auth/login` down).
+
+Route mapping to the Day 16 prompt: the suggested `GET /api/payroll/records/{periodId}` became
+`GET /api/payroll/periods/{periodId}/records`, because `/api/payroll/records/{id}` is the single-record route. The
+nested form follows the existing `/api/employees/{id}/attendance` convention. All other suggested routes are used as
+given.
+
+DTOs (`Features/Payroll/Dtos`):
+
+- `PayrollPeriodDto`: totals, who did each step and when, and `actions` (what the caller may do next);
+- `PayrollRecordDto`;
+- `PayrollCalculationResultDto`: created/updated/removed/skipped, with reasons;
+- `PayslipDto`, `SalaryStructureDto`;
+- `Create/UpdatePayrollPeriodDto`, `UpdatePayrollRecordDto` (manual amounts only), `UpdateSalaryStructureDto`,
+  `CancelPayrollDto`, and the query DTOs.
+
+No entity is returned by any endpoint.
+
+### 26.8 Payroll calculation (`PayrollCalculator`, pure and unit-tested)
+
+```
+GrossSalary    = Basic + HouseRent + Medical + Transport + OtherAllowance + Overtime + Bonus
+TotalDeduction = Tax + LeaveDeduction + Advance + Loan + OtherDeduction
+NetSalary      = GrossSalary − TotalDeduction
+```
+
+- **Working days**: the days of the period that are not weekly days off (`WorkCalendar:WeekendDays`, default Friday
+  and Saturday).
+- **Proration**: an employee who joined during the period gets `employed working days ÷ period working days` of basic,
+  allowances and tax.
+- **Leave deduction**: `monthly basic ÷ period working days × approved unpaid-leave days`, never more than the prorated
+  basic.
+  - Paid leave (Annual, Sick, Casual) is not deducted.
+  - Pending, Rejected and Cancelled leave have no effect.
+  - With `Payroll:DeductRecordedAbsences = true`, days with an explicit Absent record (and half of a HalfDay) are
+    deducted the same way. Days with no attendance record are never deducted.
+- **Day counts**, per working day: approved leave comes first (paid/unpaid); otherwise the attendance record decides.
+  Present/Late = present; HalfDay = ½ present + ½ absent; Absent = absent; Leave (recorded by HR) = paid leave.
+  Attendance and leave are only read, never changed.
+- Overtime, bonus, advance, loan and other deductions are entered by HR per record and **kept on recalculation**.
+- A negative net salary marks the record **NeedsReview**, which blocks submission.
+- Employees with no basic salary are **skipped and reported** (never paid zero silently). Inactive, resigned and
+  terminated employees, and those joining after the period, are not included.
+
+### 26.9 Business rules and validation
+
+| Rule | Where | Result |
+|---|---|---|
+| Start before end; ≤ `Payroll:MaxPeriodDays` (31); years 2000–2100; ≥ 1 working day | service (+ DB check) | 400 |
+| Overlap with a period that isn't Cancelled; duplicate dates | service + filtered unique index | 409 |
+| One record per employee and period | service (upsert) + unique index | never duplicated; 409 on a race |
+| Negative salary, allowance, tax or manual amount | DTO validation + DB check | 400 |
+| Invalid status/filters; numbers for enums | service | 400 |
+| Edit/delete a period only while Draft; edit records or recalculate only while Draft/Calculated | service | 409 |
+| Submit only Calculated, with ≥ 1 record and none NeedsReview | service | 409 / 400 |
+| Approve only PendingApproval; mark paid only Approved; cancel only Draft/Calculated/PendingApproval | service | 409 |
+| Approver's own salary is in the payroll | service | 403 |
+| Concurrent status changes | rowversion | 409 |
+
+### 26.10 Role / permission matrix (payroll)
+
+| | Employee | Manager | HR | Admin |
+|---|---|---|---|---|
+| View periods and records | — | — | ✓ | ✓ |
+| Create/edit/delete (Draft) period | — | — | ✓ | ✓ |
+| Calculate / recalculate | — | — | ✓ | ✓ |
+| Edit record (manual amounts) | — | — | ✓ | ✓ |
+| Submit for approval | — | — | ✓ | ✓ |
+| Approve | — | — | — | ✓ (not own salary) |
+| Mark paid | — | — | — | ✓ |
+| Cancel | — | — | ✓ | ✓ |
+| Salary structures | own (read) | own (read) | ✓ | ✓ |
+| Payroll history and payslip | own, Approved/Paid only | own, Approved/Paid only | all (also previews) | all |
+
+Managers have **no** payroll or salary access to their reports. Every rule is enforced in `PayrollService` and
+`SalaryStructureService`, and again by the controller policies. Records an employee may not see return 404.
+
+### 26.11 Approval workflow
+
+1. `Draft`: the period is created.
+2. **Calculate** → `Calculated`: review, edit manual amounts, recalculate.
+3. **Submit** (HR/Admin) → `PendingApproval`: locked; leave in these dates is locked too.
+4. **Approve** (Admin) → `Approved`: final; employees can see their payslips.
+5. **Mark paid** (Admin) → `Paid`.
+
+`Draft`, `Calculated` and `PendingApproval` can be **Cancelled**. The records are kept with status Cancelled, and the
+same dates can then be used by a new period. Records follow the period (`Approved`, `Paid`, `Cancelled`). There is no
+"return to Calculated" step: cancel and recreate instead.
+
+### 26.12 Payslip workflow
+
+`GET /api/payroll/payslip/{recordId}` returns:
+
+- company: `Payroll:CompanyName`, `:CompanyAddress`, `:Currency`;
+- employee: name, ID, department and designation, as copied at calculation;
+- the period, earnings and deduction lines, gross, total deduction and net;
+- day counts, payment status, approved by/at, paid at, and `isFinal`.
+
+Employees get only their own Approved/Paid payslips; HR/Admin also see previews. Each view is audited. No PDF library
+was added; the frontend payslip page is print-ready (A4 print styles).
+
+### 26.13 Error handling
+
+The standard envelope is used throughout:
+
+- `AppExceptionHandler` now maps `ForbiddenException` → 403, `UnauthorizedException` → 401 and
+  `DbUpdateConcurrencyException` → 409.
+- A 401 from the pipeline (missing, expired or revoked token) and a 403 from a policy use the same envelope, through
+  `StatusCodeResponseWriter`.
+
+### 26.14 Testing checklist (executed 2026-10-03)
+
+| Check | Result |
+|---|---|
+| Payroll period created; invalid range; overlapping; duplicate; > 31 days | PASS |
+| Records generated; duplicate employee record prevented (service and unique index) | PASS |
+| Gross, total deduction and net calculations; decimals; proration; leave deduction cap | PASS |
+| Approved unpaid leave deducted; paid, pending and rejected leave not | PASS |
+| Unauthorized users can't modify payroll (Employee, Manager, HR approving) | PASS |
+| An employee can't access another employee's payroll or payslip; a manager can't see reports' payroll | PASS |
+| Approved payroll can't be edited, recalculated, cancelled or deleted; paid payroll can't be edited | PASS |
+| Payroll can't become Paid before approval; approve before submit is refused | PASS |
+| The payslip shows the correct salary information | PASS (API and browser) |
+| Edge cases: zero allowance, zero deduction, multiple deductions, unpaid leave, bonus, overtime, negative net (NeedsReview), missing salary (skipped), inactive employee (excluded), no employees (submit refused), already approved, already paid | PASS |
+| Existing Day 1–15 functionality | PASS with authentication on (regression suites); the only change is the expected OpenAPI route count |
+
+Results:
+
+- unit tests: 282 / 282 (67 new);
+- live API checks: 249 / 249;
+- browser checks: 28 / 28;
+- Day 1–13 regression suites: 193 + 167 + 108 + 137 passed, and 56 of 57 (the one difference is the route count).
+
+All test data used `TEST-*` prefixes and 2099 payroll dates, and was removed afterwards. A checksum of every
+pre-existing table was identical before and after.
+
+### 26.15 Known limitations
+
+See §24: refresh tokens, public photos, leave balances, holidays, tax slabs, overtime module, final settlement, and
+single-Admin approval. Frontend tests: the frontend has no unit-test setup (no Vitest or Jest), and none was added; the
+browser suite covers it instead.
+
+### 26.16 Future extension points
+
+- `PayrollCalculator` is the single place for formulas: tax slabs, overtime rates or attendance-based deductions plug
+  in there.
+- Payroll line items: add `PayrollAllowance`/`PayrollDeduction` tables referencing `PayrollRecord` if more than the
+  fixed columns are needed. The Day 15 prompt suggested them; today the fixed columns cover every listed type.
+- `WorkCalendar` can read a holiday table to exclude public holidays from working days.
+- Leave balances: a `LeaveEntitlement` table, checked in `LeaveService.CreateAsync`.
+- PDF payslips: a server-side renderer behind the existing payslip DTO.

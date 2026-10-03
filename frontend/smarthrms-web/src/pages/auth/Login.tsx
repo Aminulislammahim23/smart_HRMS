@@ -1,43 +1,75 @@
+import { zodResolver } from '@hookform/resolvers/zod'
 import { Info, LogIn } from 'lucide-react'
-import { Link } from 'react-router-dom'
+import { useState } from 'react'
+import { useForm } from 'react-hook-form'
+import { Navigate, useLocation, useNavigate, type Location } from 'react-router-dom'
+import { z } from 'zod'
+import { ApiErrorAlert } from '../../components/common/ApiErrorAlert'
+import { FormField } from '../../components/common/FormField'
+import { useAuth } from '../../hooks/useAuth'
 
-/**
- * The SmartHRMS API has no login endpoint yet, so this page cannot sign anyone in. It is kept as the entry point
- * that real authentication will plug into, and it says plainly that sign-in is pending.
- */
+const schema = z.object({
+  username: z.string().trim().min(1, 'Enter your username.').max(100),
+  password: z.string().min(1, 'Enter your password.').max(128),
+})
+type LoginForm = z.infer<typeof schema>
+
+/** Sign-in. After success the user returns to the page they first asked for. */
 export default function Login() {
+  const { status, login, signedOutReason } = useAuth()
+  const navigate = useNavigate()
+  const location = useLocation()
+  const from = (location.state as { from?: Location } | null)?.from
+  const target = from && from.pathname !== '/login' ? `${from.pathname}${from.search}` : '/dashboard'
+  const [error, setError] = useState<unknown>(null)
+
+  const {
+    register,
+    handleSubmit,
+    formState: { errors, isSubmitting },
+  } = useForm<LoginForm>({ resolver: zodResolver(schema), defaultValues: { username: '', password: '' } })
+
+  if (status === 'signedIn') return <Navigate to={target} replace />
+
+  const submit = handleSubmit(async (values) => {
+    setError(null)
+    try {
+      await login(values)
+      navigate(target, { replace: true })
+    } catch (caught) {
+      setError(caught)
+    }
+  })
+
   return (
     <div className="card bg-base-100 shadow-md">
-      <div className="card-body gap-4">
+      <form className="card-body gap-4" onSubmit={submit} noValidate>
         <div>
           <h1 className="text-xl font-semibold">Sign in</h1>
           <p className="text-sm text-base-content/60">Access the SmartHRMS workspace.</p>
         </div>
 
-        <div role="alert" className="alert alert-info alert-soft items-start">
-          <Info className="size-5 shrink-0" />
-          <span className="text-sm">
-            Sign-in is not available yet: the SmartHRMS API does not provide authentication. Until it does, the workspace
-            is open without signing in.
-          </span>
-        </div>
+        {signedOutReason && !error && (
+          <div role="status" className="alert alert-info alert-soft">
+            <Info className="size-5 shrink-0" />
+            <span className="text-sm">{signedOutReason}</span>
+          </div>
+        )}
+        {error !== null && <ApiErrorAlert error={error} />}
 
-        <fieldset className="fieldset" disabled>
-          <label className="fieldset-legend" htmlFor="login-email">
-            Email
-          </label>
-          <input id="login-email" type="email" className="input w-full" placeholder="you@company.com" />
-          <label className="fieldset-legend" htmlFor="login-password">
-            Password
-          </label>
-          <input id="login-password" type="password" className="input w-full" placeholder="••••••••" />
-        </fieldset>
+        <FormField label="Username" htmlFor="login-username" error={errors.username?.message} required>
+          <input id="login-username" className="input w-full" autoComplete="username" autoFocus {...register('username')} />
+        </FormField>
+        <FormField label="Password" htmlFor="login-password" error={errors.password?.message} required>
+          <input id="login-password" type="password" className="input w-full" autoComplete="current-password" {...register('password')} />
+        </FormField>
 
-        <Link to="/dashboard" className="btn btn-primary">
-          <LogIn className="size-4" />
-          Continue to workspace
-        </Link>
-      </div>
+        <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
+          {isSubmitting ? <span className="loading loading-spinner loading-sm" /> : <LogIn className="size-4" />}
+          Sign in
+        </button>
+        <p className="text-center text-xs text-base-content/50">Forgot your password? Ask an administrator to reset it.</p>
+      </form>
     </div>
   )
 }

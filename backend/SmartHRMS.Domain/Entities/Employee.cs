@@ -36,7 +36,18 @@ public class Employee : BaseEntity
 
     public string? PhotoUrl { get; set; }
 
+    /// <summary>The employee's line manager (reviews their leave). Optional; never the employee themself.</summary>
+    public Guid? ManagerId { get; set; }
+
+    public Employee? Manager { get; set; }
+
+    public ICollection<Employee> DirectReports { get; set; } = new List<Employee>();
+
     public ApplicationUser? ApplicationUser { get; set; }
+
+    public EmployeeSalaryStructure? SalaryStructure { get; set; }
+
+    public ICollection<LeaveRequest> LeaveRequests { get; set; } = new List<LeaveRequest>();
 
     public ICollection<EmployeeDocument> Documents { get; set; } = new List<EmployeeDocument>();
 

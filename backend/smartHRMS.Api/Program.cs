@@ -1,8 +1,12 @@
+using smartHRMS.Api.Auth;
 using smartHRMS.Api.Extensions;
 using smartHRMS.Api.Middleware;
 using smartHRMS.Api.OpenApi;
 using smartHRMS.Application;
+using smartHRMS.Application.Common.Calendar;
 using smartHRMS.Application.Features.Attendances;
+using smartHRMS.Application.Features.Auth;
+using smartHRMS.Application.Features.Payroll;
 using smartHRMS.Application.Features.EmployeeDocuments;
 using smartHRMS.Infrastructure;
 
@@ -34,7 +38,16 @@ builder.Services.AddProblemDetails();
 var documentsSection = builder.Configuration.GetSection(EmployeeDocumentOptions.SectionName);
 var documentOptions = documentsSection.Get<EmployeeDocumentOptions>() ?? new EmployeeDocumentOptions();
 var attendanceOptions = builder.Configuration.GetSection(AttendanceOptions.SectionName).Get<AttendanceOptions>() ?? new AttendanceOptions();
-builder.Services.AddApplication(documentOptions, attendanceOptions);
+var workCalendarOptions = builder.Configuration.GetSection(WorkCalendarOptions.SectionName).Get<WorkCalendarOptions>() ?? new WorkCalendarOptions();
+var payrollOptions = builder.Configuration.GetSection(PayrollOptions.SectionName).Get<PayrollOptions>() ?? new PayrollOptions();
+var authOptions = builder.Configuration.GetSection(AuthOptions.SectionName).Get<AuthOptions>() ?? new AuthOptions();
+builder.Services.AddApplication(documentOptions, attendanceOptions, workCalendarOptions, payrollOptions, authOptions);
+
+// Sign-in (JWT bearer). Every endpoint requires a signed-in user unless it is marked [AllowAnonymous].
+using (var startupLoggerFactory = LoggerFactory.Create(logging => logging.AddConsole()))
+{
+    builder.Services.AddAppAuthentication(builder.Configuration, builder.Environment, startupLoggerFactory.CreateLogger("SmartHRMS.Startup"));
+}
 
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
     ?? throw new InvalidOperationException("Connection string 'DefaultConnection' was not found.");
@@ -69,7 +82,7 @@ app.UseStaticFiles();
 
 if (app.Environment.IsDevelopment())
 {
-    app.MapOpenApi();
+    app.MapOpenApi().AllowAnonymous();
     app.UseSwaggerUI(options =>
     {
         options.SwaggerEndpoint("/openapi/v1.json", "SmartHRMS API v1");
@@ -82,6 +95,9 @@ if (!string.IsNullOrWhiteSpace(builder.Configuration["https_port"]) ||
 {
     app.UseHttpsRedirection();
 }
+app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
+
+await app.EnsureBootstrapAdminAsync();
 app.Run();

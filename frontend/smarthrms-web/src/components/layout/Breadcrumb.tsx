@@ -11,6 +11,16 @@ const LABELS: Record<string, string> = {
   documents: 'Documents',
   attendance: 'Attendance',
   records: 'Records',
+  leave: 'Leave',
+  approvals: 'Approvals',
+  payroll: 'Payroll',
+  periods: 'Periods',
+  salaries: 'Salary structures',
+  my: 'My payroll',
+  me: 'My attendance',
+  approval: 'Approval',
+  payslip: 'Payslip',
+  users: 'Users & roles',
 }
 
 /** Label for an id segment, by the segment before it; ids of pages that have no own page are skipped. */
@@ -18,10 +28,12 @@ const ID_LABELS: Record<string, string> = {
   employees: 'Employee details',
   documents: 'Employee documents',
   employee: 'Employee attendance',
+  payroll: 'Payroll period',
+  payslip: 'Payslip',
 }
 
 /** Path segments that only group routes and have no page of their own. */
-const SKIPPED_SEGMENTS = new Set(['employee'])
+const SKIPPED_SEGMENTS = new Set(['employee', 'payslip'])
 
 const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 

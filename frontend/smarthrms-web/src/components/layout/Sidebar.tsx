@@ -2,23 +2,34 @@ import {
   BriefcaseBusiness,
   Building2,
   CalendarCheck,
-  CalendarOff,
+  CalendarDays,
+  ClipboardCheck,
   FileText,
+  Landmark,
   LayoutDashboard,
   LogOut,
-  Settings,
+  ReceiptText,
+  ShieldCheck,
   UserCircle,
   Users,
+  Wallet,
   type LucideIcon,
 } from 'lucide-react'
 import { NavLink } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
+import type { AuthUser, UserRole } from '../../types/auth'
 import { APP_NAME } from '../../utils/constants'
 
 interface NavItem {
   label: string
   to: string
   icon: LucideIcon
+  /** Roles that see the item; omitted = everyone signed in. */
+  roles?: UserRole[]
+  /** Only for accounts linked to an employee (self-service pages). */
+  requireEmployee?: boolean
+  /** Exact match for the active state (a parent route that has child pages of its own). */
+  end?: boolean
 }
 
 interface NavSection {
@@ -26,34 +37,58 @@ interface NavSection {
   items: NavItem[]
 }
 
-// Add future HRMS modules (attendance, leave, payroll, ...) as new sections or items here.
+const HR: UserRole[] = ['HR', 'Admin']
+
+// Navigation only hides what a role can't use; the API enforces the same rules on every request.
 const NAV_SECTIONS: NavSection[] = [
   { title: 'Overview', items: [{ label: 'Dashboard', to: '/dashboard', icon: LayoutDashboard }] },
   {
-    title: 'People',
+    title: 'My workspace',
     items: [
-      { label: 'Employees', to: '/employees', icon: Users },
-      { label: 'My Profile', to: '/profile', icon: UserCircle },
+      { label: 'My Profile', to: '/profile', icon: UserCircle, requireEmployee: true },
+      { label: 'My Attendance', to: '/attendance/me', icon: CalendarCheck, requireEmployee: true },
+      { label: 'My Leave', to: '/leave', icon: CalendarDays, requireEmployee: true, end: true },
+      { label: 'My Payroll', to: '/payroll/my', icon: ReceiptText, requireEmployee: true },
     ],
   },
   {
-    title: 'Workforce',
+    title: 'People',
     items: [
-      { label: 'Attendance', to: '/attendance', icon: CalendarCheck },
-      { label: 'Documents', to: '/documents', icon: FileText },
+      { label: 'Employees', to: '/employees', icon: Users, roles: HR },
+      { label: 'Attendance', to: '/attendance', icon: CalendarCheck, roles: HR, end: true },
+      { label: 'Leave approvals', to: '/leave/approvals', icon: ClipboardCheck, roles: ['Manager', 'HR', 'Admin'] },
+      { label: 'Documents', to: '/documents', icon: FileText, roles: HR },
+    ],
+  },
+  {
+    title: 'Payroll',
+    items: [
+      { label: 'Payroll dashboard', to: '/payroll', icon: Wallet, roles: HR, end: true },
+      { label: 'Payroll periods', to: '/payroll/periods', icon: Landmark, roles: HR },
+      { label: 'Salary structures', to: '/payroll/salaries', icon: ReceiptText, roles: HR },
     ],
   },
   {
     title: 'Organization',
     items: [
-      { label: 'Departments', to: '/departments', icon: Building2 },
-      { label: 'Designations', to: '/designations', icon: BriefcaseBusiness },
+      { label: 'Departments', to: '/departments', icon: Building2, roles: HR },
+      { label: 'Designations', to: '/designations', icon: BriefcaseBusiness, roles: HR },
     ],
   },
+  { title: 'Administration', items: [{ label: 'Users & roles', to: '/users', icon: ShieldCheck, roles: ['Admin'] }] },
 ]
 
+function visible(item: NavItem, user: AuthUser | null): boolean {
+  if (!user) return false
+  if (item.roles && !item.roles.includes(user.role)) return false
+  return !item.requireEmployee || !!user.employeeId
+}
+
 export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
-  const { isAuthEnabled } = useAuth()
+  const { user, logout } = useAuth()
+  const sections = NAV_SECTIONS.map((section) => ({ ...section, items: section.items.filter((item) => visible(item, user)) })).filter(
+    (section) => section.items.length > 0,
+  )
 
   return (
     <aside className="flex min-h-full w-64 flex-col border-r border-base-300 bg-base-100">
@@ -63,13 +98,18 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
       </div>
 
       <nav className="flex-1 overflow-y-auto p-3" aria-label="Main">
-        {NAV_SECTIONS.map((section) => (
+        {sections.map((section) => (
           <div key={section.title} className="mb-4">
             <p className="px-3 pb-1 text-xs font-semibold uppercase tracking-wider text-base-content/50">{section.title}</p>
             <ul className="menu w-full p-0">
-              {section.items.map(({ label, to, icon: Icon }) => (
+              {section.items.map(({ label, to, icon: Icon, end }) => (
                 <li key={to}>
-                  <NavLink to={to} onClick={onNavigate} className={({ isActive }) => (isActive ? 'menu-active bg-primary/10! font-medium text-primary!' : '')}>
+                  <NavLink
+                    to={to}
+                    end={end}
+                    onClick={onNavigate}
+                    className={({ isActive }) => (isActive ? 'menu-active bg-primary/10! font-medium text-primary!' : '')}
+                  >
                     <Icon className="size-4" />
                     {label}
                   </NavLink>
@@ -81,25 +121,11 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
       </nav>
 
       <ul className="menu w-full border-t border-base-300 p-3">
-        <li className="menu-disabled">
-          <span title="Leave management needs its backend (leave types, balances, requests, approvals), which does not exist yet.">
-            <CalendarOff className="size-4" />
-            Leave
-            <span className="badge badge-ghost badge-xs">Soon</span>
-          </span>
-        </li>
-        <li className="menu-disabled">
-          <span title="Settings are not available yet.">
-            <Settings className="size-4" />
-            Settings
-            <span className="badge badge-ghost badge-xs">Soon</span>
-          </span>
-        </li>
-        <li className={isAuthEnabled ? '' : 'menu-disabled'}>
-          <span title={isAuthEnabled ? undefined : 'Sign-in is not available until the backend adds authentication.'}>
+        <li>
+          <button type="button" onClick={() => logout()}>
             <LogOut className="size-4" />
-            Logout
-          </span>
+            Sign out
+          </button>
         </li>
       </ul>
     </aside>

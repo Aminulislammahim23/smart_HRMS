@@ -22,6 +22,11 @@ public class EmployeeOwnedRepository<T> : IEmployeeOwnedRepository<T> where T : 
             .FirstOrDefaultAsync(entity => entity.Id == id && entity.EmployeeId == employeeId, cancellationToken);
     }
 
+    public async Task<List<T>> GetAllAsync(CancellationToken cancellationToken)
+    {
+        return await _dbContext.Set<T>().AsNoTracking().ToListAsync(cancellationToken);
+    }
+
     public async Task<List<T>> GetByEmployeeIdAsync(Guid employeeId, CancellationToken cancellationToken)
     {
         return await _dbContext.Set<T>()

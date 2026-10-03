@@ -75,6 +75,14 @@ public class EmployeeConfiguration : IEntityTypeConfiguration<Employee>
             .HasForeignKey(e => e.DesignationId)
             .OnDelete(DeleteBehavior.Restrict);
 
+        // Line manager (self reference). Restrict: an employee with direct reports can't silently disappear.
+        builder.HasOne(e => e.Manager)
+            .WithMany(e => e.DirectReports)
+            .HasForeignKey(e => e.ManagerId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.ToTable(t => t.HasCheckConstraint("CK_Employees_NotOwnManager", "[ManagerId] IS NULL OR [ManagerId] <> [Id]"));
+
         builder.HasOne(e => e.ApplicationUser)
             .WithOne(u => u.Employee)
             .HasForeignKey<ApplicationUser>(u => u.EmployeeId)

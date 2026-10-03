@@ -32,6 +32,8 @@ public class AppExceptionHandler : IExceptionHandler
         {
             NotFoundException => (StatusCodes.Status404NotFound, "Resource not found."),
             ConflictException => (StatusCodes.Status409Conflict, "Conflict."),
+            UnauthorizedException => (StatusCodes.Status401Unauthorized, "Authentication failed."),
+            ForbiddenException => (StatusCodes.Status403Forbidden, "You do not have permission to perform this action."),
             BadRequestException => (StatusCodes.Status400BadRequest, "Bad request."),
             _ => (StatusCodes.Status500InternalServerError, "An unexpected error occurred."),
         };

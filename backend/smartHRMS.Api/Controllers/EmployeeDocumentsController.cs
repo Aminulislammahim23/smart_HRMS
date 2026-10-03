@@ -1,8 +1,11 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using smartHRMS.Api.Auth;
 using smartHRMS.Application.Common.Exceptions;
 using smartHRMS.Application.Common.Models;
 using smartHRMS.Application.Features.EmployeeDocuments;
 using smartHRMS.Application.Features.EmployeeDocuments.Dtos;
+using smartHRMS.Application.Features.Employees;
 
 namespace smartHRMS.Api.Controllers;
 
@@ -17,10 +20,12 @@ namespace smartHRMS.Api.Controllers;
 public class EmployeeDocumentsController : ControllerBase
 {
     private readonly IEmployeeDocumentService _documentService;
+    private readonly IEmployeeAccess _access;
 
-    public EmployeeDocumentsController(IEmployeeDocumentService documentService)
+    public EmployeeDocumentsController(IEmployeeDocumentService documentService, IEmployeeAccess access)
     {
         _documentService = documentService;
+        _access = access;
     }
 
     /// <summary>Lists the employee's documents, newest first. Deactivated documents are included only with includeInactive=true.</summary>
@@ -30,6 +35,7 @@ public class EmployeeDocumentsController : ControllerBase
     public async Task<ActionResult<ApiResponse<List<EmployeeDocumentDto>>>> GetAll(
         Guid employeeId, [FromQuery] bool includeInactive, CancellationToken cancellationToken)
     {
+        _access.EnsureCanViewPrivate(employeeId);
         var documents = await _documentService.GetByEmployeeAsync(employeeId, includeInactive, cancellationToken);
         return Ok(ApiResponse<List<EmployeeDocumentDto>>.Ok(documents, "Employee documents retrieved successfully."));
     }
@@ -40,6 +46,7 @@ public class EmployeeDocumentsController : ControllerBase
     public async Task<ActionResult<ApiResponse<EmployeeDocumentDto>>> GetById(
         Guid employeeId, Guid documentId, CancellationToken cancellationToken)
     {
+        _access.EnsureCanViewPrivate(employeeId);
         var document = await _documentService.GetByIdAsync(employeeId, documentId, cancellationToken);
         return Ok(ApiResponse<EmployeeDocumentDto>.Ok(document, "Employee document retrieved successfully."));
     }
@@ -50,6 +57,7 @@ public class EmployeeDocumentsController : ControllerBase
     /// documentName, and optional issueDate, expiryDate (yyyy-MM-dd) and description. Allowed types and size come
     /// from configuration.
     /// </summary>
+    [Authorize(Policy = Policies.HrOrAdmin)]
     [HttpPost]
     [Consumes("multipart/form-data")]
     [ProducesResponseType(typeof(ApiResponse<EmployeeDocumentDto>), StatusCodes.Status201Created)]
@@ -101,6 +109,7 @@ public class EmployeeDocumentsController : ControllerBase
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound, "application/json")]
     public async Task<IActionResult> Download(Guid employeeId, Guid documentId, CancellationToken cancellationToken)
     {
+        _access.EnsureCanViewPrivate(employeeId);
         var file = await _documentService.DownloadAsync(employeeId, documentId, cancellationToken);
 
         // Never let a browser guess a different (e.g. executable/HTML) type than the one validated at upload.
@@ -110,6 +119,7 @@ public class EmployeeDocumentsController : ControllerBase
     }
 
     /// <summary>Updates an active document's type and/or description. The file itself can't be changed.</summary>
+    [Authorize(Policy = Policies.HrOrAdmin)]
     [HttpPut("{documentId:guid}")]
     [ProducesResponseType(typeof(ApiResponse<EmployeeDocumentDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
@@ -122,6 +132,7 @@ public class EmployeeDocumentsController : ControllerBase
     }
 
     /// <summary>Soft delete: deactivates the document. The record and file are kept for HR history.</summary>
+    [Authorize(Policy = Policies.HrOrAdmin)]
     [HttpDelete("{documentId:guid}")]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]

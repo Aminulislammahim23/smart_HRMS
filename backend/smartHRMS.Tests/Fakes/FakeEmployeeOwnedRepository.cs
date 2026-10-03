@@ -14,6 +14,11 @@ public class FakeEmployeeOwnedRepository<T> : IEmployeeOwnedRepository<T> where 
         return Task.FromResult(Items.FirstOrDefault(x => x.Id == id && x.EmployeeId == employeeId));
     }
 
+    public Task<List<T>> GetAllAsync(CancellationToken cancellationToken)
+    {
+        return Task.FromResult(Items.ToList());
+    }
+
     public Task<List<T>> GetByEmployeeIdAsync(Guid employeeId, CancellationToken cancellationToken)
     {
         return Task.FromResult(Items.Where(x => x.EmployeeId == employeeId).OrderBy(x => x.CreatedAt).ToList());

@@ -81,3 +81,40 @@ header,
 select option {
   background-color: #0e0c34;
 }
+
+/* Printing (payslips): only the page content, black on white, without the artwork, sidebar or glass effects. */
+@media print {
+  html,
+  body {
+    background: #fff !important;
+    color: #000 !important;
+  }
+
+  body::before,
+  .drawer-side,
+  .toast {
+    display: none !important;
+  }
+
+  .drawer-content main {
+    max-width: none;
+    padding: 0;
+  }
+
+  .card,
+  .payslip {
+    backdrop-filter: none;
+    background: #fff !important;
+    color: #000 !important;
+    box-shadow: none !important;
+  }
+
+  .payslip * {
+    color: #000 !important;
+  }
+
+  @page {
+    size: A4;
+    margin: 12mm;
+  }
+}

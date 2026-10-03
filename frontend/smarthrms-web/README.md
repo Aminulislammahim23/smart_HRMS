@@ -1,7 +1,25 @@
 # SmartHRMS Web
 
-React + TypeScript frontend for the SmartHRMS API (Day 1–11): dashboard, employees (with photo), departments,
-designations, and employee profiles (personal details, addresses, emergency contacts, education, experience, documents).
+React + TypeScript frontend for the SmartHRMS API (Day 1–16): sign-in with roles, dashboard, employees (with photo),
+departments, designations, employee profiles, documents, attendance, leave (apply / approve), salary structures,
+payroll (periods, calculation, review, approval, payment) and printable payslips.
+
+## Sign-in and roles
+
+The API issues a JWT at `POST /api/auth/login`; the app keeps it in `sessionStorage` (cleared when the tab closes) and
+sends it on every request. Any `401` (expired token, account deactivated, role or password changed) returns to the
+sign-in page. Roles decide what the sidebar shows and which routes open (`RoleRoute` in `src/routes`); the API checks
+every request again, so hiding a page is never the only protection.
+
+| Role | Sees |
+|---|---|
+| Employee | own dashboard, profile (read-only), attendance (check in/out), leave, payroll and payslips |
+| Manager | the same, plus leave approvals for direct reports |
+| HR | everything except users and payroll approval/payment |
+| Admin | everything, including Users & roles, payroll approval and marking payroll paid |
+
+First sign-in: the backend creates the first Admin from `Auth:BootstrapAdmin` (see the backend documentation §17).
+That Admin then creates accounts on the *Users & roles* page.
 
 Stack: React 19, Vite 8, TypeScript 6, React Router 7, Axios, Tailwind CSS 4 + DaisyUI 5, React Hook Form + Zod, Lucide.
 
@@ -33,5 +51,6 @@ Any unknown path must fall back to `index.html` (client-side routing).
 
 ## Not available yet (backend limitations)
 
-- **Sign-in.** The API has no authentication, so `/login` explains this, and *My Profile* asks which employee to show.
+- **PDF payslips.** The payslip page is print-ready (browser *Print → Save as PDF*); there is no server-side PDF.
+- **Unit tests.** There is no Vitest/Jest setup; the frontend is verified with browser end-to-end runs.
 - **Server-side search, filtering and paging.** The list endpoints return every row, so the employee list filters, sorts and pages in the browser.

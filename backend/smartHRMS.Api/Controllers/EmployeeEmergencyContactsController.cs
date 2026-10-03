@@ -1,4 +1,7 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using smartHRMS.Api.Auth;
+using smartHRMS.Application.Features.Employees;
 using smartHRMS.Application.Common.Models;
 using smartHRMS.Application.Features.EmployeeEmergencyContacts;
 using smartHRMS.Application.Features.EmployeeEmergencyContacts.Dtos;
@@ -13,10 +16,12 @@ namespace smartHRMS.Api.Controllers;
 public class EmployeeEmergencyContactsController : ControllerBase
 {
     private readonly IEmployeeEmergencyContactService _service;
+    private readonly IEmployeeAccess _access;
 
-    public EmployeeEmergencyContactsController(IEmployeeEmergencyContactService service)
+    public EmployeeEmergencyContactsController(IEmployeeEmergencyContactService service, IEmployeeAccess access)
     {
         _service = service;
+        _access = access;
     }
 
     [HttpGet]
@@ -24,6 +29,7 @@ public class EmployeeEmergencyContactsController : ControllerBase
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
     public async Task<ActionResult<ApiResponse<List<EmployeeEmergencyContactDto>>>> GetAll(Guid employeeId, CancellationToken cancellationToken)
     {
+        _access.EnsureCanViewPrivate(employeeId);
         var contacts = await _service.GetAllAsync(employeeId, cancellationToken);
         return Ok(ApiResponse<List<EmployeeEmergencyContactDto>>.Ok(contacts, "Emergency contacts retrieved successfully."));
     }
@@ -33,10 +39,12 @@ public class EmployeeEmergencyContactsController : ControllerBase
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
     public async Task<ActionResult<ApiResponse<EmployeeEmergencyContactDto>>> GetById(Guid employeeId, Guid id, CancellationToken cancellationToken)
     {
+        _access.EnsureCanViewPrivate(employeeId);
         var contact = await _service.GetByIdAsync(employeeId, id, cancellationToken);
         return Ok(ApiResponse<EmployeeEmergencyContactDto>.Ok(contact, "Emergency contact retrieved successfully."));
     }
 
+    [Authorize(Policy = Policies.HrOrAdmin)]
     [HttpPost]
     [ProducesResponseType(typeof(ApiResponse<EmployeeEmergencyContactDto>), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
@@ -49,6 +57,7 @@ public class EmployeeEmergencyContactsController : ControllerBase
         return CreatedAtAction(nameof(GetById), new { employeeId, id = contact.Id }, ApiResponse<EmployeeEmergencyContactDto>.Ok(contact, "Emergency contact created successfully."));
     }
 
+    [Authorize(Policy = Policies.HrOrAdmin)]
     [HttpPut("{id:guid}")]
     [ProducesResponseType(typeof(ApiResponse<EmployeeEmergencyContactDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
@@ -61,6 +70,7 @@ public class EmployeeEmergencyContactsController : ControllerBase
         return Ok(ApiResponse<EmployeeEmergencyContactDto>.Ok(contact, "Emergency contact updated successfully."));
     }
 
+    [Authorize(Policy = Policies.HrOrAdmin)]
     [HttpDelete("{id:guid}")]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]

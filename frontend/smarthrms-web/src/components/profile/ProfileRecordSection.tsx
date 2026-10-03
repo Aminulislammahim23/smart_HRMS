@@ -6,6 +6,7 @@ import type { EmployeeOwnedRecord } from '../../types/profile'
 import { ConfirmDialog } from '../common/ConfirmDialog'
 import { EmptyState } from '../common/EmptyState'
 import { Modal } from '../common/Modal'
+import { useCanEditProfile } from './profileEditing'
 
 export interface RecordFormProps<TRecord, TSave> {
   /** Absent when adding a new record. */
@@ -51,6 +52,7 @@ export function ProfileRecordSection<TRecord extends EmployeeOwnedRecord, TSave>
   onChanged,
   addBlockedReason,
 }: ProfileRecordSectionProps<TRecord, TSave>) {
+  const canEdit = useCanEditProfile()
   const { notify } = useToast()
   const [editing, setEditing] = useState<Editing<TRecord>>(null)
   const [deleting, setDeleting] = useState<TRecord | null>(null)
@@ -83,25 +85,27 @@ export function ProfileRecordSection<TRecord extends EmployeeOwnedRecord, TSave>
             <h2 className="font-semibold">{title}</h2>
             <p className="text-sm text-base-content/60">{addBlockedReason ?? description}</p>
           </div>
-          {items.length > 0 && addButton}
+          {canEdit && items.length > 0 && addButton}
         </div>
 
         {items.length === 0 ? (
-          <EmptyState compact icon={icon} title={`No ${noun} added yet`} action={addButton} />
+          <EmptyState compact icon={icon} title={`No ${noun} added yet`} action={canEdit ? addButton : undefined} />
         ) : (
           <ul className="grid gap-3 md:grid-cols-2">
             {items.map((record) => (
               <li key={record.id} className="rounded-box border border-base-300 p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">{renderItem(record)}</div>
-                  <div className="flex shrink-0 gap-1">
-                    <button type="button" className="btn btn-ghost btn-xs btn-square" onClick={() => setEditing({ record })} aria-label={`Edit ${describe(record)}`}>
-                      <Pencil className="size-3.5" />
-                    </button>
-                    <button type="button" className="btn btn-ghost btn-xs btn-square text-error" onClick={() => setDeleting(record)} aria-label={`Delete ${describe(record)}`}>
-                      <Trash2 className="size-3.5" />
-                    </button>
-                  </div>
+                  {canEdit && (
+                    <div className="flex shrink-0 gap-1">
+                      <button type="button" className="btn btn-ghost btn-xs btn-square" onClick={() => setEditing({ record })} aria-label={`Edit ${describe(record)}`}>
+                        <Pencil className="size-3.5" />
+                      </button>
+                      <button type="button" className="btn btn-ghost btn-xs btn-square text-error" onClick={() => setDeleting(record)} aria-label={`Delete ${describe(record)}`}>
+                        <Trash2 className="size-3.5" />
+                      </button>
+                    </div>
+                  )}
                 </div>
               </li>
             ))}

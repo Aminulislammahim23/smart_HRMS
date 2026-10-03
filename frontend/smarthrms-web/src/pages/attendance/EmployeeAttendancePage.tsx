@@ -12,6 +12,7 @@ import { Loading } from '../../components/common/Loading'
 import { Modal } from '../../components/common/Modal'
 import { EmployeePhoto } from '../../components/employee/EmployeePhoto'
 import { useApi } from '../../hooks/useApi'
+import { useAuth } from '../../hooks/useAuth'
 import { useToast } from '../../hooks/useToast'
 import { createAttendance, getEmployeeAttendance } from '../../services/attendanceService'
 import { getEmployeeById } from '../../services/employeeService'
@@ -22,6 +23,8 @@ import { formatDate, formatDuration, formatMonth, monthRange, shiftMonth, todayI
 export default function EmployeeAttendancePage() {
   const { employeeId = '' } = useParams()
   const [params, setParams] = useSearchParams()
+  const { hasRole } = useAuth()
+  const isHr = hasRole('HR', 'Admin')
   const { notify } = useToast()
   const requestedMonth = params.get('month') ?? ''
   const month = /^\d{4}-\d{2}$/.test(requestedMonth) ? requestedMonth : todayInput().slice(0, 7)
@@ -71,14 +74,16 @@ export default function EmployeeAttendancePage() {
               {employee.employeeCode} · {employee.designationName} · {employee.departmentName}
             </p>
           </div>
-          <div className="flex gap-2">
-            <Link to="/attendance" className="btn btn-sm btn-ghost">
-              <ArrowLeft className="size-4" /> Attendance
-            </Link>
-            <Link to={`/employees/${employee.id}`} className="btn btn-sm">
-              Employee profile
-            </Link>
-          </div>
+          {isHr && (
+            <div className="flex gap-2">
+              <Link to="/attendance" className="btn btn-sm btn-ghost">
+                <ArrowLeft className="size-4" /> Attendance
+              </Link>
+              <Link to={`/employees/${employee.id}`} className="btn btn-sm">
+                Employee profile
+              </Link>
+            </div>
+          )}
         </div>
       </div>
 
@@ -97,7 +102,7 @@ export default function EmployeeAttendancePage() {
             <AttendanceCalendar
               month={month}
               records={records}
-              onSelectDay={(date, record) => (record ? setViewing(record) : employee.isActive && setCreatingFor(date))}
+              onSelectDay={(date, record) => (record ? setViewing(record) : isHr && employee.isActive && setCreatingFor(date))}
             />
             <p className="text-xs text-base-content/50">Select a day to see its details{employee.isActive ? ', or an empty day to add a record' : ''}.</p>
           </div>
@@ -138,7 +143,7 @@ export default function EmployeeAttendancePage() {
         </div>
       </div>
 
-      {viewing && <AttendanceDetailsModal record={viewing} onClose={() => setViewing(null)} onChanged={reload} />}
+      {viewing && <AttendanceDetailsModal record={viewing} onClose={() => setViewing(null)} onChanged={reload} readOnly={!isHr} />}
 
       <Modal open={creatingFor !== null} title={`Add record — ${creatingFor ? formatDate(creatingFor) : ''}`} onClose={() => setCreatingFor(null)} size="lg">
         {creatingFor !== null && (

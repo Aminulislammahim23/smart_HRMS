@@ -266,6 +266,8 @@ public class EmployeeService : IEmployeeService
             DepartmentName = employee.Department?.Name,
             DesignationId = employee.DesignationId,
             DesignationName = employee.Designation?.Name,
+            ManagerId = employee.ManagerId,
+            ManagerName = employee.Manager is null ? null : $"{employee.Manager.FirstName} {employee.Manager.LastName}".Trim(),
             EmploymentType = employee.EmploymentType.ToString(),
             BasicSalary = employee.BasicSalary,
             Status = employee.Status.ToString(),

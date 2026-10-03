@@ -49,3 +49,6 @@ backend/smartHRMS.Api/wwwroot/uploads/**
 
 # Uploaded employee documents (private, local dev storage) - never commit
 backend/smartHRMS.Api/App_Data/
+
+# Local sign-in credentials (never commit)
+documentation/log.md

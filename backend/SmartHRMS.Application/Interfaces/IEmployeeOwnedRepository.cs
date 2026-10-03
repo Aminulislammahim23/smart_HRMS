@@ -12,6 +12,9 @@ public interface IEmployeeOwnedRepository<T> where T : EmployeeOwnedEntity
     /// <summary>Returns the record only if it belongs to <paramref name="employeeId"/>.</summary>
     Task<T?> GetByIdAsync(Guid employeeId, Guid id, CancellationToken cancellationToken);
 
+    /// <summary>Every record of this type, for all employees (read-only).</summary>
+    Task<List<T>> GetAllAsync(CancellationToken cancellationToken);
+
     /// <summary>All records of one employee, oldest first.</summary>
     Task<List<T>> GetByEmployeeIdAsync(Guid employeeId, CancellationToken cancellationToken);
 

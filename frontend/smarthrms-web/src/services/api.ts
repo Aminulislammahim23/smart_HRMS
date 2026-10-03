@@ -1,6 +1,7 @@
 import axios, { type AxiosResponse } from 'axios'
 import { ApiError, type ApiResponse } from '../types/api'
 import { API_BASE_URL } from '../utils/constants'
+import { tokenStore } from './tokenStore'
 
 /** The single HTTP client for the SmartHRMS API. Every failure is rejected as an ApiError (except cancellations). */
 export const api = axios.create({
@@ -9,7 +10,12 @@ export const api = axios.create({
   timeout: 30_000,
 })
 
-// Authentication hook point: once the backend issues tokens, attach them here in a request interceptor.
+// Every request carries the signed-in user's access token. The API decides what that user may do.
+api.interceptors.request.use((config) => {
+  const token = tokenStore.get()
+  if (token) config.headers.Authorization = `Bearer ${token}`
+  return config
+})
 
 api.interceptors.response.use(
   (response) => response,
@@ -17,6 +23,11 @@ api.interceptors.response.use(
     // Cancelled requests (e.g. a page unmounting) are not errors the user should see.
     if (axios.isCancel(error)) {
       return Promise.reject(error)
+    }
+    // An expired or revoked session (but not a failed sign-in attempt): end it so the app returns to the sign-in page.
+    if (axios.isAxiosError(error) && error.response?.status === 401 && !isSignInRequest(error.config?.url)) {
+      tokenStore.clear()
+      tokenStore.notifyUnauthorized()
     }
     return Promise.reject(await toApiError(error))
   },
@@ -32,6 +43,10 @@ export async function unwrap<T>(request: Promise<AxiosResponse<ApiResponse<T>>>)
 export async function unwrapMessage(request: Promise<AxiosResponse<ApiResponse<unknown>>>): Promise<string> {
   const response = await request
   return response.data.message
+}
+
+function isSignInRequest(url: string | undefined): boolean {
+  return !!url && url.replace(/^\/+/, '').startsWith('auth/login')
 }
 
 export function isCancelled(error: unknown): boolean {
@@ -82,9 +97,12 @@ async function toApiError(error: unknown): Promise<ApiError> {
     case 400:
       return new ApiError(serverMessage ?? 'The request was not valid.', status, errors)
     case 401:
-      return new ApiError('You are not signed in or your session has expired.', status)
+      // A failed sign-in carries its own reason ("Invalid username or password.", "Too many failed sign-in attempts...").
+      return isSignInRequest(error.config?.url) && errors.length > 0
+        ? new ApiError(errors[0], status, errors)
+        : new ApiError('You are not signed in or your session has expired.', status)
     case 403:
-      return new ApiError('You do not have permission to do this.', status)
+      return new ApiError('You do not have permission to do this.', status, errors)
     case 404:
       return new ApiError(serverMessage ?? 'The requested record was not found.', status, errors)
     case 409:
