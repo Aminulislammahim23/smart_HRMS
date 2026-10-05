@@ -70,9 +70,9 @@ export function approvePayroll(periodId: string): Promise<PayrollPeriod> {
   return unwrap(api.post<ApiResponse<PayrollPeriod>>(`/payroll/${periodId}/approve`))
 }
 
-/** Records payment of every unpaid payslip; the payment date defaults to today (office date) on the server. */
-export function markPayrollPaid(periodId: string, paymentDate?: string): Promise<PayrollPeriod> {
-  return unwrap(api.post<ApiResponse<PayrollPeriod>>(`/payroll/${periodId}/mark-paid`, { paymentDate: paymentDate || null }))
+/** Finalizes approved payroll and locks it (Admin). Salaries are then paid through payment batches. */
+export function finalizePayroll(periodId: string): Promise<PayrollPeriod> {
+  return unwrap(api.post<ApiResponse<PayrollPeriod>>(`/payroll/${periodId}/finalize`))
 }
 
 export function cancelPayroll(periodId: string, reason: string | null): Promise<PayrollPeriod> {
@@ -112,11 +112,6 @@ export function generatePayslips(periodId: string): Promise<PayslipGenerationRes
   return unwrap(api.post<ApiResponse<PayslipGenerationResult>>(`/payroll/${periodId}/payslips`))
 }
 
-/** Records the salary payment of one payslip (Admin). */
-export function recordPayslipPayment(payslipId: string, paymentDate?: string): Promise<Payslip> {
-  return unwrap(api.post<ApiResponse<Payslip>>(`/payroll/payslips/${payslipId}/mark-paid`, { paymentDate: paymentDate || null }))
-}
-
 /** The signed-in employee's payslips (employee from the token). */
 export function getMyPayslips(query: PayrollHistoryQuery, signal?: AbortSignal): Promise<PagedResult<PayrollRecord>> {
   return unwrap(api.get<ApiResponse<PagedResult<PayrollRecord>>>('/payroll/me/payslips', { params: params(query), signal }))
@@ -125,11 +120,6 @@ export function getMyPayslips(query: PayrollHistoryQuery, signal?: AbortSignal):
 /** The signed-in employee's latest payslip; rejects with 404 while none has been issued. */
 export function getMyCurrentPayslip(signal?: AbortSignal): Promise<Payslip> {
   return unwrap(api.get<ApiResponse<Payslip>>('/payroll/me/payslips/current', { signal }))
-}
-
-/** The signed-in employee's salary payments (paid payslips). */
-export function getMyPayments(query: PayrollHistoryQuery, signal?: AbortSignal): Promise<PagedResult<PayrollRecord>> {
-  return unwrap(api.get<ApiResponse<PagedResult<PayrollRecord>>>('/payroll/me/payments', { params: params(query), signal }))
 }
 
 // ---- salary structures ----

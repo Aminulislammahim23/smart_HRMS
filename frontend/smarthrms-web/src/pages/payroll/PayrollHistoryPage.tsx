@@ -214,7 +214,7 @@ export default function PayrollHistoryPage({ mode = 'history' }: { mode?: 'histo
             </div>
             <select className="select select-sm w-full" value={query.status ?? ''} onChange={(e) => update({ status: e.target.value })} aria-label="Payroll status">
               <option value="">Any payroll status</option>
-              {(mode === 'history' ? PAYROLL_STATUSES : (['Approved', 'Paid'] as const)).map((s) => (
+              {(mode === 'history' ? PAYROLL_STATUSES : (['Approved', 'Finalized', 'Paid'] as const)).map((s) => (
                 <option key={s} value={s}>
                   {enumLabel(s)}
                 </option>

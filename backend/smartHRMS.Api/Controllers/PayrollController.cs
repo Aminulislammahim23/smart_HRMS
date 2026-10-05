@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Authorization;
+﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using smartHRMS.Api.Auth;
 using smartHRMS.Application.Common.Models;
@@ -9,8 +9,8 @@ namespace smartHRMS.Api.Controllers;
 
 /// <summary>
 /// Payroll: periods, calculation, review, approval, payment and payslips. Management endpoints are HR/Admin (approve
-/// and mark-paid: Admin); employees reach only their own history and payslips. The service re-checks every rule.
-/// Workflow: Draft → Calculated → PendingApproval → Approved → Paid (or Cancelled before approval).
+/// and finalize: Admin; payment is made through /api/payments); employees reach only their own history and payslips. The service re-checks every rule.
+/// Workflow: Draft â†’ Calculated â†’ PendingApproval â†’ Approved â†’ Paid (or Cancelled before approval).
 /// </summary>
 [ApiController]
 [Route("api/payroll")]
@@ -146,7 +146,7 @@ public class PayrollController : ControllerBase
 
     // ---- workflow ----
 
-    /// <summary>Calculated → PendingApproval (HR/Admin). Refused while any record needs review.</summary>
+    /// <summary>Calculated â†’ PendingApproval (HR/Admin). Refused while any record needs review.</summary>
     [Authorize(Policy = Policies.HrOrAdmin)]
     [HttpPost("{periodId:guid}/submit")]
     [ProducesResponseType(typeof(ApiResponse<PayrollPeriodDto>), StatusCodes.Status200OK)]
@@ -159,7 +159,7 @@ public class PayrollController : ControllerBase
         return Ok(ApiResponse<PayrollPeriodDto>.Ok(period, "Payroll submitted for approval."));
     }
 
-    /// <summary>PendingApproval → Approved (Admin). Never by someone whose own salary is in the payroll.</summary>
+    /// <summary>PendingApproval â†’ Approved (Admin). Never by someone whose own salary is in the payroll.</summary>
     [Authorize(Policy = Policies.Admin)]
     [HttpPost("{periodId:guid}/approve")]
     [ProducesResponseType(typeof(ApiResponse<PayrollPeriodDto>), StatusCodes.Status200OK)]
@@ -171,19 +171,23 @@ public class PayrollController : ControllerBase
         return Ok(ApiResponse<PayrollPeriodDto>.Ok(period, "Payroll approved."));
     }
 
-    /// <summary>Approved → Paid (Admin): records payment of every unpaid payslip; paymentDate defaults to today.</summary>
+    /// <summary>
+    /// Approved â†’ Finalized (Admin): validates the payroll, locks it and makes it payable through payment batches
+    /// (/api/payments). Salary is paid only through payment batches.
+    /// </summary>
     [Authorize(Policy = Policies.Admin)]
-    [HttpPost("{periodId:guid}/mark-paid")]
+    [HttpPost("{periodId:guid}/finalize")]
     [ProducesResponseType(typeof(ApiResponse<PayrollPeriodDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status409Conflict)]
-    public async Task<ActionResult<ApiResponse<PayrollPeriodDto>>> MarkPaid(Guid periodId, RecordPaymentDto? dto, CancellationToken cancellationToken)
+    public async Task<ActionResult<ApiResponse<PayrollPeriodDto>>> Finalize(Guid periodId, CancellationToken cancellationToken)
     {
-        var period = await _payrollService.MarkPaidAsync(periodId, dto ?? new RecordPaymentDto(), cancellationToken);
-        return Ok(ApiResponse<PayrollPeriodDto>.Ok(period, "Payroll marked as paid."));
+        var period = await _payrollService.FinalizeAsync(periodId, cancellationToken);
+        return Ok(ApiResponse<PayrollPeriodDto>.Ok(period, "Payroll finalized and locked."));
     }
 
-    /// <summary>Draft, Calculated or PendingApproval → Cancelled (HR/Admin). Records are kept for history.</summary>
+    /// <summary>Draft, Calculated or PendingApproval â†’ Cancelled (HR/Admin). Records are kept for history.</summary>
     [Authorize(Policy = Policies.HrOrAdmin)]
     [HttpPost("{periodId:guid}/cancel")]
     [ProducesResponseType(typeof(ApiResponse<PayrollPeriodDto>), StatusCodes.Status200OK)]
@@ -221,7 +225,7 @@ public class PayrollController : ControllerBase
 
     /// <summary>
     /// Payroll history: every record with its payslip and payment (HR/Admin). Filters: employeeId, departmentId, month,
-    /// year, status, paymentStatus, search; paging: page, pageSize (≤ 100); sortBy (period, employee, gross, net,
+    /// year, status, paymentStatus, search; paging: page, pageSize (â‰¤ 100); sortBy (period, employee, gross, net,
     /// paymentDate), sortDirection (asc, desc).
     /// </summary>
     [Authorize(Policy = Policies.HrOrAdmin)]
@@ -267,18 +271,6 @@ public class PayrollController : ControllerBase
         return Ok(ApiResponse<PayslipGenerationResultDto>.Ok(result, $"{result.Generated} payslips generated."));
     }
 
-    /// <summary>Records the salary payment of one payslip (Admin); paymentDate defaults to today and can't be in the future.</summary>
-    [Authorize(Policy = Policies.Admin)]
-    [HttpPost("payslips/{id:guid}/mark-paid")]
-    [ProducesResponseType(typeof(ApiResponse<PayslipDto>), StatusCodes.Status200OK)]
-    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
-    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status409Conflict)]
-    public async Task<ActionResult<ApiResponse<PayslipDto>>> MarkPayslipPaid(Guid id, RecordPaymentDto? dto, CancellationToken cancellationToken)
-    {
-        var payslip = await _payslipService.RecordPaymentAsync(id, dto ?? new RecordPaymentDto(), cancellationToken);
-        return Ok(ApiResponse<PayslipDto>.Ok(payslip, "Payment recorded."));
-    }
 
     /// <summary>One employee's payslips: HR/Admin, or the employee themself (403 for anyone else).</summary>
     [HttpGet("employee/{employeeId:guid}/payslips")]

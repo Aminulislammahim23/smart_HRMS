@@ -30,4 +30,13 @@ public static class AuditActions
     public const string PayslipViewed = "PayslipViewed";
     public const string PayslipsGenerated = "PayslipsGenerated";
     public const string PayslipPaid = "PayslipPaid";
+    public const string PayrollFinalized = "PayrollFinalized";
+    public const string PayrollLocked = "PayrollLocked";
+    public const string PaymentBatchCreated = "PaymentBatchCreated";
+    public const string PaymentBatchCancelled = "PaymentBatchCancelled";
+    public const string PaymentProcessingStarted = "PaymentProcessingStarted";
+    public const string PaymentMarkedPaid = "PaymentMarkedPaid";
+    public const string PaymentMarkedFailed = "PaymentMarkedFailed";
+    public const string PaymentRetried = "PaymentRetried";
+    public const string PaymentCancelled = "PaymentCancelled";
 }

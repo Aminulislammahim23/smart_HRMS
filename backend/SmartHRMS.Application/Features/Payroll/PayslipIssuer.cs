@@ -5,12 +5,14 @@ using smartHRMS.Domain.Enums;
 namespace smartHRMS.Application.Features.Payroll;
 
 /// <summary>
-/// The single place where payslips are issued and paid. A payslip only ever exists for an Approved or Paid payroll:
-/// its amounts are the record's, which is locked from approval on, so the payslip is the approved snapshot.
+/// The single place where payslips are issued and their payment outcome recorded. A payslip only ever exists for
+/// Approved, Finalized or Paid payroll: its amounts are the record's, which is locked from approval on, so the payslip
+/// is the approved snapshot. Payment itself is managed by payment batches (Day 18); the payslip mirrors the result.
 /// </summary>
 internal static class PayslipIssuer
 {
-    public static readonly IReadOnlyCollection<PayrollPeriodStatus> IssuableStatuses = new[] { PayrollPeriodStatus.Approved, PayrollPeriodStatus.Paid };
+    public static readonly IReadOnlyCollection<PayrollPeriodStatus> IssuableStatuses =
+        new[] { PayrollPeriodStatus.Approved, PayrollPeriodStatus.Finalized, PayrollPeriodStatus.Paid };
 
     public static string NumberFor(PayrollPeriod period, PayrollRecord record) => $"PS-{period.StartDate:yyyyMMdd}-{record.EmployeeCode}";
 
@@ -73,20 +75,29 @@ internal static class PayslipIssuer
         return date;
     }
 
-    public static void MarkPaid(Payslip payslip, DateOnly paymentDate, Guid userId, DateTime now)
+    /// <summary>Copies a confirmed payment onto the employee's payslip.</summary>
+    public static void MarkPaid(Payslip payslip, DateOnly paymentDate, PaymentMethod method, string? reference, Guid userId, DateTime now)
     {
         payslip.PaymentStatus = PaymentStatus.Paid;
         payslip.PaymentDate = paymentDate;
+        payslip.PaymentMethod = method;
+        payslip.PaymentReference = reference;
         payslip.PaidAt = now;
         payslip.PaidByUserId = userId;
         payslip.UpdatedAt = now;
     }
 
-    /// <summary>Once every payslip of an Approved period is paid, the period (and its records) become Paid.</summary>
+    /// <summary>A payslip needs paying when its net salary is above zero.</summary>
+    public static bool IsPayable(PayrollRecord record) => record.NetSalary > 0;
+
+    /// <summary>
+    /// Once every payable payslip of a Finalized period is paid, the period (and its records) become Paid. Records with
+    /// a zero net salary have nothing to pay and don't hold the period open.
+    /// </summary>
     public static bool CompletePeriodIfAllPaid(PayrollPeriod period, Guid userId, DateTime now)
     {
-        if (period.Status != PayrollPeriodStatus.Approved || period.Records.Count == 0
-            || period.Records.Any(r => r.Payslip?.PaymentStatus != PaymentStatus.Paid))
+        if (period.Status != PayrollPeriodStatus.Finalized || period.Records.Count == 0
+            || period.Records.Where(IsPayable).Any(r => r.Payslip?.PaymentStatus != PaymentStatus.Paid))
         {
             return false;
         }

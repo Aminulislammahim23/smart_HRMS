@@ -78,7 +78,8 @@ public class PayrollRepository : IPayrollRepository
     public async Task<bool> IsDateRangeLockedAsync(DateOnly from, DateOnly to, CancellationToken cancellationToken)
     {
         return await _dbContext.PayrollPeriods.AnyAsync(p =>
-            (p.Status == PayrollPeriodStatus.PendingApproval || p.Status == PayrollPeriodStatus.Approved || p.Status == PayrollPeriodStatus.Paid)
+            (p.Status == PayrollPeriodStatus.PendingApproval || p.Status == PayrollPeriodStatus.Approved
+                || p.Status == PayrollPeriodStatus.Finalized || p.Status == PayrollPeriodStatus.Paid)
             && p.StartDate <= to && p.EndDate >= from, cancellationToken);
     }
 

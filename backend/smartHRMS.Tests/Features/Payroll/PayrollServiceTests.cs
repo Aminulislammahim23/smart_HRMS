@@ -178,7 +178,7 @@ public class PayrollServiceTests
         await Assert.ThrowsAsync<ForbiddenException>(() => s.Service.GetRecordsAsync(period.Id, new PayrollRecordQueryDto(), CancellationToken.None));
         await Assert.ThrowsAsync<ForbiddenException>(() => s.Service.SubmitAsync(period.Id, CancellationToken.None));
         await Assert.ThrowsAsync<ForbiddenException>(() => s.Service.ApproveAsync(period.Id, CancellationToken.None));
-        await Assert.ThrowsAsync<ForbiddenException>(() => s.Service.MarkPaidAsync(period.Id, new RecordPaymentDto(), CancellationToken.None));
+        await Assert.ThrowsAsync<ForbiddenException>(() => s.Service.FinalizeAsync(period.Id, CancellationToken.None));
     }
 
     // ---- calculation ----
@@ -335,7 +335,7 @@ public class PayrollServiceTests
     }
 
     [Fact]
-    public async Task Workflow_DraftToPaid_RecordsWhoAndWhen()
+    public async Task Workflow_DraftToFinalized_RecordsWhoAndWhen_AndLocks()
     {
         var s = new Setup();
         var id = await s.CalculatedOctoberAsync();
@@ -347,14 +347,19 @@ public class PayrollServiceTests
         var approved = await s.Service.ApproveAsync(id, CancellationToken.None);
         Assert.Equal("Approved", approved.Status);
         Assert.NotNull(approved.ApprovedAt);
+        Assert.True(approved.Actions.CanFinalize);
         Assert.All(s.Payroll.Records, r => Assert.Equal(PayrollRecordStatus.Approved, r.Status));
 
-        var paid = await s.Service.MarkPaidAsync(id, new RecordPaymentDto(), CancellationToken.None);
-        Assert.Equal("Paid", paid.Status);
-        Assert.NotNull(paid.PaidAt);
-        Assert.All(s.Payroll.Records, r => Assert.Equal(PayrollRecordStatus.Paid, r.Status));
+        var finalized = await s.Service.FinalizeAsync(id, CancellationToken.None);
+        Assert.Equal("Finalized", finalized.Status);
+        Assert.True(finalized.IsLocked);
+        Assert.NotNull(finalized.FinalizedAt);
+        Assert.True(finalized.Actions.CanCreatePaymentBatch);
+        Assert.False(finalized.Actions.CanFinalize);
+        Assert.All(s.Payroll.Records, r => Assert.Equal(PayrollRecordStatus.Finalized, r.Status));
         Assert.Contains(s.Audit.Entries, e => e.Action == "PayrollApproved");
-        Assert.Contains(s.Audit.Entries, e => e.Action == "PayrollPaid");
+        Assert.Contains(s.Audit.Entries, e => e.Action == "PayrollFinalized");
+        Assert.Contains(s.Audit.Entries, e => e.Action == "PayrollLocked");
     }
 
     [Fact]
@@ -368,15 +373,35 @@ public class PayrollServiceTests
     }
 
     [Fact]
-    public async Task CannotMarkPaid_BeforeApproval()
+    public async Task CannotFinalize_BeforeApproval_Unprocessed_OrTwice()
     {
         var s = new Setup();
-        var id = await s.CalculatedOctoberAsync();
+        var draft = await s.CreateOctoberAsync();
         s.User.SignInAs(UserRole.Admin);
+        var unprocessed = await Assert.ThrowsAsync<BadRequestException>(() => s.Service.FinalizeAsync(draft.Id, CancellationToken.None));
+        Assert.Equal("Payroll must be approved before finalization.", unprocessed.Message);
 
-        await Assert.ThrowsAsync<ConflictException>(() => s.Service.MarkPaidAsync(id, new RecordPaymentDto(), CancellationToken.None));
-        await s.Service.SubmitAsync(id, CancellationToken.None);
-        await Assert.ThrowsAsync<ConflictException>(() => s.Service.MarkPaidAsync(id, new RecordPaymentDto(), CancellationToken.None));
+        s.User.SignInAs(UserRole.HR);
+        await s.Service.CalculateAsync(draft.Id, CancellationToken.None);
+        s.User.SignInAs(UserRole.Admin);
+        await Assert.ThrowsAsync<BadRequestException>(() => s.Service.FinalizeAsync(draft.Id, CancellationToken.None));
+        await s.Service.SubmitAsync(draft.Id, CancellationToken.None);
+        await Assert.ThrowsAsync<BadRequestException>(() => s.Service.FinalizeAsync(draft.Id, CancellationToken.None));
+
+        await s.Service.ApproveAsync(draft.Id, CancellationToken.None);
+        await s.Service.FinalizeAsync(draft.Id, CancellationToken.None);
+        var twice = await Assert.ThrowsAsync<ConflictException>(() => s.Service.FinalizeAsync(draft.Id, CancellationToken.None));
+        Assert.Equal("Payroll is already finalized.", twice.Message);
+    }
+
+    [Fact]
+    public async Task HrCannotFinalize()
+    {
+        var s = new Setup();
+        var id = await s.ApprovedOctoberAsync();
+        s.User.SignInAs(UserRole.HR);
+
+        await Assert.ThrowsAsync<ForbiddenException>(() => s.Service.FinalizeAsync(id, CancellationToken.None));
     }
 
     [Fact]
@@ -416,15 +441,20 @@ public class PayrollServiceTests
     }
 
     [Fact]
-    public async Task PaidPayroll_CannotBeEdited()
+    public async Task FinalizedPayroll_IsLocked_AndCannotBeModified()
     {
         var s = new Setup();
         var id = await s.ApprovedOctoberAsync();
-        await s.Service.MarkPaidAsync(id, new RecordPaymentDto(), CancellationToken.None);
+        await s.Service.FinalizeAsync(id, CancellationToken.None);
+        s.User.SignInAs(UserRole.HR);
 
-        await Assert.ThrowsAsync<ConflictException>(() => s.Service.UpdateRecordAsync(s.RecordOf(s.Alice).Id, new UpdatePayrollRecordDto { Bonus = 1 }, CancellationToken.None));
+        var locked = await Assert.ThrowsAsync<ConflictException>(() => s.Service.UpdateRecordAsync(s.RecordOf(s.Alice).Id, new UpdatePayrollRecordDto { Bonus = 1 }, CancellationToken.None));
+        Assert.Equal("Payroll is locked and cannot be modified.", locked.Message);
         await Assert.ThrowsAsync<ConflictException>(() => s.Service.CalculateAsync(id, CancellationToken.None));
-        await Assert.ThrowsAsync<ConflictException>(() => s.Service.MarkPaidAsync(id, new RecordPaymentDto(), CancellationToken.None));
+        await Assert.ThrowsAsync<ConflictException>(() => s.Service.CancelAsync(id, new CancelPayrollDto(), CancellationToken.None));
+        await Assert.ThrowsAsync<ConflictException>(() => s.Service.DeletePeriodAsync(id, CancellationToken.None));
+        await Assert.ThrowsAsync<ConflictException>(() => s.Service.UpdatePeriodAsync(id, new UpdatePayrollPeriodDto { StartDate = OctStart, EndDate = OctEnd }, CancellationToken.None));
+        Assert.Equal(0m, s.RecordOf(s.Alice).Bonus);
     }
 
     [Fact]

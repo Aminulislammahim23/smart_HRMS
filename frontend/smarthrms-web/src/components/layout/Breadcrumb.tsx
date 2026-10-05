@@ -23,6 +23,12 @@ const LABELS: Record<string, string> = {
   users: 'Users & roles',
   history: 'History',
   payslips: 'Payslips',
+  batches: 'Payment batches',
+}
+
+/** Labels for whole paths whose last segment is shared with another page (/payments/history vs /payroll/history). */
+const PATH_LABELS: Record<string, string> = {
+  '/payments/history': 'Payment history',
 }
 
 /** Label for an id segment, by the segment before it; ids of pages that have no own page are skipped. */
@@ -33,10 +39,11 @@ const ID_LABELS: Record<string, string> = {
   payroll: 'Payroll period',
   payslips: 'Payslip',
   payslip: 'Payslip',
+  batches: 'Batch details',
 }
 
 /** Path segments that only group routes and have no page of their own. */
-const SKIPPED_SEGMENTS = new Set(['employee', 'payslip'])
+const SKIPPED_SEGMENTS = new Set(['employee', 'payslip', 'payments'])
 
 const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -62,7 +69,7 @@ function buildCrumbs(pathname: string): Crumb[] {
       return
     }
     if (SKIPPED_SEGMENTS.has(segment)) return
-    crumbs.push({ label: LABELS[segment] ?? segment, to: path })
+    crumbs.push({ label: PATH_LABELS[path] ?? LABELS[segment] ?? segment, to: path })
   })
 
   return crumbs

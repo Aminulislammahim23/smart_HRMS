@@ -42,15 +42,12 @@ public interface IPayslipService
 
     /// <summary>Issues the missing payslips of an Approved or Paid payroll (HR/Admin). Never for unapproved payroll.</summary>
     Task<PayslipGenerationResultDto> GenerateAsync(Guid periodId, CancellationToken cancellationToken);
-
-    /// <summary>Records the salary payment of one payslip (Admin). The payroll becomes Paid when every payslip is paid.</summary>
-    Task<PayslipDto> RecordPaymentAsync(Guid payslipId, RecordPaymentDto dto, CancellationToken cancellationToken);
 }
 
 /// <summary>
 /// Payslips are the approved payroll snapshot: issued at approval (or by <see cref="GenerateAsync"/> for older approved
 /// payroll), never for Draft, Calculated, PendingApproval or Cancelled payroll. Amounts come from the locked payroll
-/// record; nothing is recalculated here. Payment is recorded per payslip, separately from approval.
+/// record; nothing is recalculated here. Payment is made through payment batches (Day 18) and mirrored here.
 ///
 /// Access: HR/Admin see everything. Employees reach only their own payslips, and the "my" endpoints take the
 /// employee from the token, never from the request. Managers have no access to their reports' payslips.
@@ -180,43 +177,6 @@ public class PayslipService : IPayslipService
         return new PayslipGenerationResultDto { PayrollPeriodId = period.Id, Generated = issued.Count, AlreadyGenerated = existing };
     }
 
-    public async Task<PayslipDto> RecordPaymentAsync(Guid payslipId, RecordPaymentDto dto, CancellationToken cancellationToken)
-    {
-        _currentUser.EnsureAdmin();
-
-        var payslip = await _payrollRepository.GetPayslipAsync(payslipId, cancellationToken)
-            ?? throw new NotFoundException($"Payslip with id '{payslipId}' was not found.");
-        if (payslip.PaymentStatus == PaymentStatus.Paid)
-        {
-            throw new ConflictException($"Payslip {payslip.PayslipNumber} is already paid ({payslip.PaymentDate:yyyy-MM-dd}).");
-        }
-
-        // The whole period is loaded so the payroll can become Paid when this was its last unpaid payslip.
-        var period = await _payrollRepository.GetPeriodAsync(payslip.PayrollPeriodId, includeRecords: true, cancellationToken)
-            ?? throw new NotFoundException($"Payroll period with id '{payslip.PayrollPeriodId}' was not found.");
-        if (period.Status != PayrollPeriodStatus.Approved)
-        {
-            throw new ConflictException($"Payment can only be recorded for approved payroll; this payroll is {period.Status}.");
-        }
-
-        var now = DateTime.UtcNow;
-        var userId = _currentUser.RequireUserId();
-        var paymentDate = PayslipIssuer.PaymentDate(dto.PaymentDate, period, _clock.Today);
-
-        PayslipIssuer.MarkPaid(payslip, paymentDate, userId, now);
-        var periodPaid = PayslipIssuer.CompletePeriodIfAllPaid(period, userId, now);
-
-        _auditLogger.Add(AuditActions.PayslipPaid, nameof(Payslip), payslip.Id, $"{payslip.PayslipNumber} paid on {paymentDate:yyyy-MM-dd}.");
-        if (periodPaid)
-        {
-            _auditLogger.Add(AuditActions.PayrollPaid, nameof(PayrollPeriod), period.Id, "Every payslip paid.");
-        }
-
-        await _payrollRepository.SaveChangesAsync(cancellationToken);
-
-        return await BuildAsync(payslip.PayrollRecord!, cancellationToken);
-    }
-
     // ---- helpers ----
 
     private async Task<PagedResult<PayrollRecordDto>> SearchAsync(PayrollHistoryQueryDto query, Guid? employeeId, bool onlyWithPayslip, bool onlyPaid, CancellationToken cancellationToken)
@@ -326,6 +286,8 @@ public class PayslipService : IPayslipService
             PayrollStatus = period.Status.ToString(),
             PaymentStatus = (payslip?.PaymentStatus ?? PaymentStatus.Unpaid).ToString(),
             PaymentDate = payslip?.PaymentDate,
+            PaymentMethod = payslip?.PaymentMethod?.ToString(),
+            PaymentReference = payslip?.PaymentReference,
             GeneratedAt = payslip?.GeneratedAt,
             IsFinal = payslip is not null,
             ApprovedBy = period.ApprovedByUserId is { } approver && names.TryGetValue(approver, out var name) ? name : null,

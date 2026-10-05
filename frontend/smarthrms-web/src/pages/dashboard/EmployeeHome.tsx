@@ -34,7 +34,7 @@ export default function EmployeeHome() {
   const { data, reload } = useApi(load)
   const [today, leave, payroll, teamPending] = data ?? [[], [], [], []]
   const record = today[0]
-  const latestPay = payroll.find((r) => r.periodStatus === 'Approved' || r.periodStatus === 'Paid')
+  const latestPay = payroll.find((r) => r.periodStatus === 'Approved' || r.periodStatus === 'Finalized' || r.periodStatus === 'Paid')
 
   const run = async (kind: 'in' | 'out') => {
     setBusy(kind)

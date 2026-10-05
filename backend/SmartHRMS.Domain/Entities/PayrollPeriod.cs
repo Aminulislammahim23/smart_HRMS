@@ -35,6 +35,14 @@ public class PayrollPeriod : BaseEntity
 
     public DateTime? PaidAt { get; set; }
 
+    /// <summary>Set by finalization: the payroll is final and locked, and payment batches can be created.</summary>
+    public DateTime? FinalizedAt { get; set; }
+
+    public Guid? FinalizedByUserId { get; set; }
+
+    /// <summary>True once finalized: no payroll value (salary, allowance, deduction, net, record, period) can change.</summary>
+    public bool IsLocked { get; set; }
+
     public Guid? PaidByUserId { get; set; }
 
     public DateTime? CancelledAt { get; set; }

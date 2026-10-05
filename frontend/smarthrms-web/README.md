@@ -1,8 +1,9 @@
 # SmartHRMS Web
 
-React + TypeScript frontend for the SmartHRMS API (Day 1–16): sign-in with roles, dashboard, employees (with photo),
+React + TypeScript frontend for the SmartHRMS API (Day 1–18): sign-in with roles, dashboard, employees (with photo),
 departments, designations, employee profiles, documents, attendance, leave (apply / approve), salary structures,
-payroll (periods, calculation, review, approval, payment) and printable payslips.
+payroll (periods, calculation, review, approval, finalization), printable payslips, payroll history and salary
+payments (payment batches, payment processing, payment history, the employee's own payments).
 
 ## Sign-in and roles
 
@@ -13,10 +14,10 @@ every request again, so hiding a page is never the only protection.
 
 | Role | Sees |
 |---|---|
-| Employee | own dashboard, profile (read-only), attendance (check in/out), leave, payroll and payslips |
+| Employee | own dashboard, profile (read-only), attendance (check in/out), leave, payroll, payslips and own payments |
 | Manager | the same, plus leave approvals for direct reports |
-| HR | everything except users and payroll approval/payment |
-| Admin | everything, including Users & roles, payroll approval and marking payroll paid |
+| HR | everything except users and payroll approval/finalization; payment batches and payment history read-only |
+| Admin | everything, including Users & roles, payroll approval and finalization, and payments (create batch, process, paid/failed/retry/cancel; never their own salary) |
 
 First sign-in: the backend creates the first Admin from `Auth:BootstrapAdmin` (see the backend documentation §17).
 That Admin then creates accounts on the *Users & roles* page.

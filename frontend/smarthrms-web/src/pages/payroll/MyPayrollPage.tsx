@@ -7,14 +7,18 @@ import { Loading } from '../../components/common/Loading'
 import { PageHeader } from '../../components/common/PageHeader'
 import { Pagination } from '../../components/common/Pagination'
 import { Table, type Column } from '../../components/common/Table'
+import { PaymentTransactionStatusBadge } from '../../components/payments/PaymentBadges'
+import { PaymentDetailsModal } from '../../components/payments/PaymentDetailsModal'
 import { PayrollRecordModal } from '../../components/payroll/PayrollRecordModal'
 import { PaymentStatusBadge } from '../../components/payroll/PayrollStatusBadge'
 import { PayslipView } from '../../components/payroll/PayslipView'
 import { useApi } from '../../hooks/useApi'
-import { getMyCurrentPayslip, getMyPayments, getMyPayslips } from '../../services/payrollService'
+import { getMyPayments } from '../../services/paymentService'
+import { getMyCurrentPayslip, getMyPayslips } from '../../services/payrollService'
 import { ApiError } from '../../types/api'
+import type { Payment } from '../../types/payment'
 import type { PayrollRecord } from '../../types/payroll'
-import { formatAmount, formatDate } from '../../utils/formatters'
+import { enumLabel, formatAmount, formatDate } from '../../utils/formatters'
 
 type Tab = 'current' | 'history' | 'payments'
 const TABS: { id: Tab; label: string }[] = [
@@ -51,16 +55,13 @@ function CurrentPayslip() {
   )
 }
 
-/** Own payslips or own payments, paged on the server. The employee always comes from the sign-in token. */
-function MyList({ kind }: { kind: 'history' | 'payments' }) {
+/** Own payslips, paged on the server. The employee always comes from the sign-in token. */
+function MyPayslips() {
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
   const [viewing, setViewing] = useState<PayrollRecord | null>(null)
 
-  const load = useCallback(
-    (signal: AbortSignal) => (kind === 'history' ? getMyPayslips({ page, pageSize }, signal) : getMyPayments({ page, pageSize }, signal)),
-    [kind, page, pageSize],
-  )
+  const load = useCallback((signal: AbortSignal) => getMyPayslips({ page, pageSize }, signal), [page, pageSize])
   const { data, error, loading, reload } = useApi(load)
 
   const columns: Column<PayrollRecord>[] = [
@@ -107,11 +108,7 @@ function MyList({ kind }: { kind: 'history' | 'payments' }) {
         ) : loading && !data ? (
           <Loading label="Loading…" />
         ) : !data || data.items.length === 0 ? (
-          <EmptyState
-            icon={kind === 'history' ? ReceiptText : Wallet}
-            title={kind === 'history' ? 'No payslips yet' : 'No payments recorded yet'}
-            description={kind === 'history' ? 'Payslips appear here once payroll is approved.' : 'A payment appears once your salary for the month has been paid.'}
-          />
+          <EmptyState icon={ReceiptText} title="No payslips yet" description="Payslips appear here once payroll is approved." />
         ) : (
           <>
             <Table columns={columns} rows={data.items} rowKey={(r) => r.id} compact />
@@ -130,6 +127,75 @@ function MyList({ kind }: { kind: 'history' | 'payments' }) {
         )}
       </div>
       {viewing && <PayrollRecordModal record={viewing} onClose={() => setViewing(null)} />}
+    </div>
+  )
+}
+
+/**
+ * Own salary payments (read-only), paged on the server. The server takes the employee from the token and never
+ * offers payment actions here.
+ */
+function MyPayments() {
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(10)
+  const [viewing, setViewing] = useState<string | null>(null)
+
+  const load = useCallback((signal: AbortSignal) => getMyPayments({ page, pageSize }, signal), [page, pageSize])
+  const { data, error, loading, reload } = useApi(load)
+
+  const columns: Column<Payment>[] = [
+    { key: 'period', header: 'Payroll month', render: (p) => <span className="font-medium">{p.periodName}</span> },
+    { key: 'net', header: 'Net salary', render: (p) => <span className="font-semibold tabular-nums">{formatAmount(p.amount)}</span>, className: 'text-right' },
+    { key: 'status', header: 'Payment', render: (p) => <PaymentTransactionStatusBadge status={p.status} /> },
+    { key: 'date', header: 'Payment date', render: (p) => (p.status === 'Paid' ? formatDate(p.paymentDate) : '—'), className: 'whitespace-nowrap' },
+    { key: 'method', header: 'Method', render: (p) => enumLabel(p.paymentMethod), className: 'hidden sm:table-cell whitespace-nowrap' },
+    { key: 'reference', header: 'Transaction ref.', render: (p) => p.transactionReference ?? '—', className: 'hidden md:table-cell' },
+    {
+      key: 'actions',
+      header: <span className="sr-only">Actions</span>,
+      className: 'text-right',
+      render: (p) => (
+        <div className="flex justify-end gap-1">
+          <button type="button" className="btn btn-ghost btn-xs btn-square" onClick={() => setViewing(p.id)} title="Details" aria-label={`Payment details of ${p.periodName}`}>
+            <Eye className="size-4" />
+          </button>
+          {p.payslipId && (
+            <Link to={`/payroll/payslips/${p.payslipId}`} className="btn btn-ghost btn-xs btn-square" title="Payslip" aria-label={`Payslip of ${p.periodName}`}>
+              <ReceiptText className="size-4" />
+            </Link>
+          )}
+        </div>
+      ),
+    },
+  ]
+
+  return (
+    <div className="card bg-base-100 shadow-sm">
+      <div className="card-body gap-3 p-4 sm:p-6">
+        {error ? (
+          <ErrorState error={error} onRetry={reload} />
+        ) : loading && !data ? (
+          <Loading label="Loading…" />
+        ) : !data || data.items.length === 0 ? (
+          <EmptyState icon={Wallet} title="No payments yet" description="A payment appears here once your salary for the month is being paid." />
+        ) : (
+          <>
+            <Table columns={columns} rows={data.items} rowKey={(p) => p.id} compact />
+            <Pagination
+              page={data.page}
+              pageCount={Math.max(1, data.totalPages)}
+              pageSize={data.pageSize}
+              total={data.totalCount}
+              onPageChange={setPage}
+              onPageSizeChange={(size) => {
+                setPageSize(size)
+                setPage(1)
+              }}
+            />
+          </>
+        )}
+      </div>
+      {viewing && <PaymentDetailsModal paymentId={viewing} onClose={() => setViewing(null)} />}
     </div>
   )
 }
@@ -158,8 +224,8 @@ export default function MyPayrollPage() {
         ))}
       </div>
       {tab === 'current' && <CurrentPayslip />}
-      {tab === 'history' && <MyList key="history" kind="history" />}
-      {tab === 'payments' && <MyList key="payments" kind="payments" />}
+      {tab === 'history' && <MyPayslips />}
+      {tab === 'payments' && <MyPayments />}
     </>
   )
 }

@@ -45,7 +45,7 @@ public class PayrollPeriodConfiguration : IEntityTypeConfiguration<PayrollPeriod
         foreach (var userKey in new[]
                  {
                      nameof(PayrollPeriod.CreatedByUserId), nameof(PayrollPeriod.CalculatedByUserId), nameof(PayrollPeriod.SubmittedByUserId),
-                     nameof(PayrollPeriod.ApprovedByUserId), nameof(PayrollPeriod.PaidByUserId), nameof(PayrollPeriod.CancelledByUserId),
+                     nameof(PayrollPeriod.ApprovedByUserId), nameof(PayrollPeriod.FinalizedByUserId), nameof(PayrollPeriod.PaidByUserId), nameof(PayrollPeriod.CancelledByUserId),
                  })
         {
             builder.HasOne<ApplicationUser>()

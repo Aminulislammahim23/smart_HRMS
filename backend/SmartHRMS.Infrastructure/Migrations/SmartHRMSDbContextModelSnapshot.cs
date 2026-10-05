@@ -751,6 +751,250 @@ namespace smartHRMS.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("smartHRMS.Domain.Entities.PaymentBatch", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("BatchNumber")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("CreatedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateOnly>("PaymentDate")
+                        .HasColumnType("date");
+
+                    b.Property<string>("PaymentMethod")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<Guid>("PayrollPeriodId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<decimal>("TotalAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<int>("TotalEmployees")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BatchNumber")
+                        .IsUnique();
+
+                    b.HasIndex("CreatedByUserId");
+
+                    b.HasIndex("PayrollPeriodId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_PaymentBatches_PayrollPeriodId_Open")
+                        .HasFilter("[Status] <> 'Paid' AND [Status] <> 'Cancelled'");
+
+                    b.HasIndex("Status");
+
+                    b.ToTable("PaymentBatches", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_PaymentBatches_Totals", "[TotalEmployees] >= 0 AND [TotalAmount] >= 0");
+                        });
+                });
+
+            modelBuilder.Entity("smartHRMS.Domain.Entities.PaymentBatchItem", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("EmployeeId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("FailureReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateTime?>("PaidAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("PaymentBatchId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("PaymentReference")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<Guid>("PayrollRecordId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EmployeeId");
+
+                    b.HasIndex("PayrollRecordId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_PaymentBatchItems_PayrollRecordId_Active")
+                        .HasFilter("[Status] <> 'Cancelled'");
+
+                    b.HasIndex("PaymentBatchId", "EmployeeId")
+                        .IsUnique();
+
+                    b.ToTable("PaymentBatchItems", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_PaymentBatchItems_Amount", "[Amount] > 0");
+                        });
+                });
+
+            modelBuilder.Entity("smartHRMS.Domain.Entities.PaymentStatusHistory", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("ChangedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("NewStatus")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<Guid>("PaymentTransactionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("PreviousStatus")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ChangedByUserId");
+
+                    b.HasIndex("PaymentTransactionId", "CreatedAt");
+
+                    b.ToTable("PaymentStatusHistories", (string)null);
+                });
+
+            modelBuilder.Entity("smartHRMS.Domain.Entities.PaymentTransaction", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("EmployeeId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("FailureReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<Guid>("PaymentBatchId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("PaymentBatchItemId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateOnly?>("PaymentDate")
+                        .HasColumnType("date");
+
+                    b.Property<string>("PaymentMethod")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<DateTime?>("ProcessedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("TransactionReference")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PaymentBatchId");
+
+                    b.HasIndex("PaymentBatchItemId")
+                        .IsUnique();
+
+                    b.HasIndex("EmployeeId", "Status");
+
+                    b.ToTable("PaymentTransactions", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_PaymentTransactions_Amount", "[Amount] > 0");
+
+                            t.HasCheckConstraint("CK_PaymentTransactions_PaidHasDate", "[Status] <> 'Paid' OR ([PaymentDate] IS NOT NULL AND [ProcessedAt] IS NOT NULL)");
+                        });
+                });
+
             modelBuilder.Entity("smartHRMS.Domain.Entities.PayrollPeriod", b =>
                 {
                     b.Property<Guid>("Id")
@@ -783,6 +1027,15 @@ namespace smartHRMS.Infrastructure.Migrations
 
                     b.Property<DateOnly>("EndDate")
                         .HasColumnType("date");
+
+                    b.Property<DateTime?>("FinalizedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("FinalizedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("IsLocked")
+                        .HasColumnType("bit");
 
                     b.Property<string>("Name")
                         .IsRequired()
@@ -831,6 +1084,8 @@ namespace smartHRMS.Infrastructure.Migrations
                     b.HasIndex("CancelledByUserId");
 
                     b.HasIndex("CreatedByUserId");
+
+                    b.HasIndex("FinalizedByUserId");
 
                     b.HasIndex("PaidByUserId");
 
@@ -1016,6 +1271,14 @@ namespace smartHRMS.Infrastructure.Migrations
 
                     b.Property<DateOnly?>("PaymentDate")
                         .HasColumnType("date");
+
+                    b.Property<string>("PaymentMethod")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("PaymentReference")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
 
                     b.Property<string>("PaymentStatus")
                         .IsRequired()
@@ -1207,6 +1470,86 @@ namespace smartHRMS.Infrastructure.Migrations
                     b.Navigation("Employee");
                 });
 
+            modelBuilder.Entity("smartHRMS.Domain.Entities.PaymentBatch", b =>
+                {
+                    b.HasOne("smartHRMS.Domain.Entities.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("CreatedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("smartHRMS.Domain.Entities.PayrollPeriod", "PayrollPeriod")
+                        .WithMany()
+                        .HasForeignKey("PayrollPeriodId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("PayrollPeriod");
+                });
+
+            modelBuilder.Entity("smartHRMS.Domain.Entities.PaymentBatchItem", b =>
+                {
+                    b.HasOne("smartHRMS.Domain.Entities.Employee", null)
+                        .WithMany()
+                        .HasForeignKey("EmployeeId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("smartHRMS.Domain.Entities.PaymentBatch", "PaymentBatch")
+                        .WithMany("Items")
+                        .HasForeignKey("PaymentBatchId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("smartHRMS.Domain.Entities.PayrollRecord", "PayrollRecord")
+                        .WithMany()
+                        .HasForeignKey("PayrollRecordId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("PaymentBatch");
+
+                    b.Navigation("PayrollRecord");
+                });
+
+            modelBuilder.Entity("smartHRMS.Domain.Entities.PaymentStatusHistory", b =>
+                {
+                    b.HasOne("smartHRMS.Domain.Entities.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("ChangedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("smartHRMS.Domain.Entities.PaymentTransaction", null)
+                        .WithMany("History")
+                        .HasForeignKey("PaymentTransactionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("smartHRMS.Domain.Entities.PaymentTransaction", b =>
+                {
+                    b.HasOne("smartHRMS.Domain.Entities.Employee", null)
+                        .WithMany()
+                        .HasForeignKey("EmployeeId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("smartHRMS.Domain.Entities.PaymentBatch", "PaymentBatch")
+                        .WithMany()
+                        .HasForeignKey("PaymentBatchId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("smartHRMS.Domain.Entities.PaymentBatchItem", "PaymentBatchItem")
+                        .WithOne("Transaction")
+                        .HasForeignKey("smartHRMS.Domain.Entities.PaymentTransaction", "PaymentBatchItemId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("PaymentBatch");
+
+                    b.Navigation("PaymentBatchItem");
+                });
+
             modelBuilder.Entity("smartHRMS.Domain.Entities.PayrollPeriod", b =>
                 {
                     b.HasOne("smartHRMS.Domain.Entities.ApplicationUser", null)
@@ -1227,6 +1570,11 @@ namespace smartHRMS.Infrastructure.Migrations
                     b.HasOne("smartHRMS.Domain.Entities.ApplicationUser", null)
                         .WithMany()
                         .HasForeignKey("CreatedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("smartHRMS.Domain.Entities.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("FinalizedByUserId")
                         .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("smartHRMS.Domain.Entities.ApplicationUser", null)
@@ -1325,6 +1673,21 @@ namespace smartHRMS.Infrastructure.Migrations
                     b.Navigation("PersonalDetails");
 
                     b.Navigation("SalaryStructure");
+                });
+
+            modelBuilder.Entity("smartHRMS.Domain.Entities.PaymentBatch", b =>
+                {
+                    b.Navigation("Items");
+                });
+
+            modelBuilder.Entity("smartHRMS.Domain.Entities.PaymentBatchItem", b =>
+                {
+                    b.Navigation("Transaction");
+                });
+
+            modelBuilder.Entity("smartHRMS.Domain.Entities.PaymentTransaction", b =>
+                {
+                    b.Navigation("History");
                 });
 
             modelBuilder.Entity("smartHRMS.Domain.Entities.PayrollPeriod", b =>

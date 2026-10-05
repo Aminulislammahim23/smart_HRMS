@@ -1,4 +1,5 @@
 import {
+  Banknote,
   BriefcaseBusiness,
   Building2,
   CalendarCheck,
@@ -6,6 +7,7 @@ import {
   ClipboardCheck,
   FileStack,
   FileText,
+  HandCoins,
   History,
   Landmark,
   LayoutDashboard,
@@ -69,6 +71,8 @@ const NAV_SECTIONS: NavSection[] = [
       { label: 'Payroll periods', to: '/payroll/periods', icon: Landmark, roles: HR },
       { label: 'Payroll history', to: '/payroll/history', icon: History, roles: HR },
       { label: 'Payslips', to: '/payroll/payslips', icon: FileStack, roles: HR, end: true },
+      { label: 'Payment batches', to: '/payments/batches', icon: Banknote, roles: HR },
+      { label: 'Payment history', to: '/payments/history', icon: HandCoins, roles: HR },
       { label: 'Salary structures', to: '/payroll/salaries', icon: ReceiptText, roles: HR },
     ],
   },

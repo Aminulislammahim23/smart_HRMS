@@ -2,11 +2,12 @@ import { AlertTriangle, ClipboardCheck, ListChecks, Pencil, UserX } from 'lucide
 import { useCallback, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { ErrorState } from '../../components/common/ErrorState'
+import { PeriodPaymentBatches } from '../../components/payments/PeriodPaymentBatches'
 import { Loading } from '../../components/common/Loading'
 import { Modal } from '../../components/common/Modal'
 import { PageHeader } from '../../components/common/PageHeader'
 import { PayrollPeriodForm } from '../../components/payroll/PayrollPeriodForm'
-import { PayrollStatusBadge } from '../../components/payroll/PayrollStatusBadge'
+import { LockedBadge, PayrollStatusBadge } from '../../components/payroll/PayrollStatusBadge'
 import { PayrollSummaryCards } from '../../components/payroll/PayrollSummaryCards'
 import { PayrollWorkflowButtons } from '../../components/payroll/PayrollWorkflowButtons'
 import { usePayrollActions } from '../../components/payroll/usePayrollActions'
@@ -21,6 +22,7 @@ const STEPS: { label: string; at: (p: PayrollPeriod) => string | null; by: (p: P
   { label: 'Calculated', at: (p) => p.calculatedAt, by: (p) => p.calculatedBy },
   { label: 'Submitted for approval', at: (p) => p.submittedAt, by: (p) => p.submittedBy },
   { label: 'Approved', at: (p) => p.approvedAt, by: (p) => p.approvedBy },
+  { label: 'Finalized and locked', at: (p) => p.finalizedAt, by: (p) => p.finalizedBy },
   { label: 'Paid', at: (p) => p.paidAt, by: (p) => p.paidBy },
 ]
 
@@ -74,6 +76,7 @@ export default function PayrollPeriodDetailsPage() {
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-sm text-base-content/60">Status</span>
               <PayrollStatusBadge status={period.status} />
+              {period.isLocked && <LockedBadge />}
               {period.payslipCount > 0 && (
                 <Link
                   to={`/payroll/payslips?year=${period.startDate.slice(0, 4)}&month=${Number(period.startDate.slice(5, 7))}`}
@@ -101,6 +104,17 @@ export default function PayrollPeriodDetailsPage() {
           </div>
         )}
 
+        {period.status === 'Approved' && (
+          <div role="note" className="alert alert-info alert-soft">
+            <span className="text-sm">Payslips have been issued. An Admin finalizes this payroll to lock it; salaries are then paid through a payment batch.</span>
+          </div>
+        )}
+        {period.isLocked && (
+          <div role="note" className="alert alert-soft">
+            <span className="text-sm">This payroll is finalized and locked: salaries, allowances, deductions and net amounts can no longer be changed.</span>
+          </div>
+        )}
+
         <PayrollSummaryCards employees={period.employeeCount} gross={period.grossTotal} deduction={period.deductionTotal} net={period.netTotal} />
 
         {calculation && calculation.skipped.length > 0 && (
@@ -123,6 +137,8 @@ export default function PayrollPeriodDetailsPage() {
             </div>
           </div>
         )}
+
+        {(period.status === 'Finalized' || period.status === 'Paid') && <PeriodPaymentBatches key={period.updatedAt ?? period.createdAt} periodId={period.id} />}
 
         <div className="grid gap-6 lg:grid-cols-2">
           <div className="card bg-base-100 shadow-sm">

@@ -26,8 +26,8 @@ public interface IPayrollService
 
     Task<PayrollPeriodDto> ApproveAsync(Guid periodId, CancellationToken cancellationToken);
 
-    /// <summary>Records payment of every unpaid payslip of an Approved payroll; the payroll becomes Paid.</summary>
-    Task<PayrollPeriodDto> MarkPaidAsync(Guid periodId, RecordPaymentDto dto, CancellationToken cancellationToken);
+    /// <summary>Approved → Finalized (Admin): validates, locks the payroll and makes it payable through payment batches.</summary>
+    Task<PayrollPeriodDto> FinalizeAsync(Guid periodId, CancellationToken cancellationToken);
 
     Task<PayrollPeriodDto> CancelAsync(Guid periodId, CancelPayrollDto dto, CancellationToken cancellationToken);
 

@@ -29,7 +29,7 @@ namespace smartHRMS.Application.Features.Payroll;
 /// </summary>
 public class PayrollService : IPayrollService
 {
-    private static readonly IReadOnlyCollection<PayrollPeriodStatus> FinalStatuses = new[] { PayrollPeriodStatus.Approved, PayrollPeriodStatus.Paid };
+    private static readonly IReadOnlyCollection<PayrollPeriodStatus> FinalStatuses = new[] { PayrollPeriodStatus.Approved, PayrollPeriodStatus.Finalized, PayrollPeriodStatus.Paid };
     private static readonly IReadOnlyCollection<LeaveStatus> ApprovedOnly = new[] { LeaveStatus.Approved };
 
     private readonly IPayrollRepository _payrollRepository;
@@ -359,33 +359,63 @@ public class PayrollService : IPayrollService
         return await MapPeriodAsync(period, cancellationToken);
     }
 
-    public async Task<PayrollPeriodDto> MarkPaidAsync(Guid periodId, RecordPaymentDto dto, CancellationToken cancellationToken)
+    public async Task<PayrollPeriodDto> FinalizeAsync(Guid periodId, CancellationToken cancellationToken)
     {
         _currentUser.EnsureAdmin();
 
         var period = await GetPeriodEntityAsync(periodId, true, cancellationToken);
-        EnsureStatus(period, "marked as paid", PayrollPeriodStatus.Approved);
+        if (period.Status == PayrollPeriodStatus.Finalized || period.IsLocked)
+        {
+            throw new ConflictException("Payroll is already finalized.");
+        }
+
+        if (period.Status != PayrollPeriodStatus.Approved)
+        {
+            throw new BadRequestException(period.Status is PayrollPeriodStatus.Draft or PayrollPeriodStatus.Calculated or PayrollPeriodStatus.PendingApproval
+                ? "Payroll must be approved before finalization."
+                : $"A {period.Status} payroll can't be finalized.");
+        }
+
+        var problems = new List<string>();
+        if (period.Records.Count == 0)
+        {
+            problems.Add("the payroll has no records");
+        }
+
+        if (period.Records.Any(r => r.Status == PayrollRecordStatus.NeedsReview || r.NetSalary < 0))
+        {
+            problems.Add("some records have an invalid (negative) net salary");
+        }
+
+        if (period.Records.Any(r => r.BasicSalary <= 0 && r.GrossSalary <= 0))
+        {
+            problems.Add("some records have no salary information");
+        }
+
+        if (problems.Count > 0)
+        {
+            throw new BadRequestException($"Payroll can't be finalized: {string.Join("; ", problems)}.");
+        }
 
         var now = DateTime.UtcNow;
         var userId = _currentUser.RequireUserId();
-        var paymentDate = PayslipIssuer.PaymentDate(dto.PaymentDate, period, _clock.Today);
 
+        // Approval normally issued every payslip already; any gap is filled so finalized payroll is complete.
         foreach (var payslip in PayslipIssuer.IssueMissing(period, userId, now))
         {
             await _payrollRepository.AddPayslipAsync(payslip, cancellationToken);
         }
 
-        // Payslips already paid individually keep their own payment date.
-        var newlyPaid = 0;
-        foreach (var payslip in period.Records.Select(r => r.Payslip!).Where(p => p.PaymentStatus != PaymentStatus.Paid))
-        {
-            PayslipIssuer.MarkPaid(payslip, paymentDate, userId, now);
-            newlyPaid++;
-        }
+        period.Status = PayrollPeriodStatus.Finalized;
+        period.IsLocked = true;
+        period.FinalizedAt = now;
+        period.FinalizedByUserId = userId;
+        period.UpdatedAt = now;
+        SetRecordStatus(period, PayrollRecordStatus.Finalized);
 
-        PayslipIssuer.CompletePeriodIfAllPaid(period, userId, now);
-
-        _auditLogger.Add(AuditActions.PayrollPaid, nameof(PayrollPeriod), period.Id, $"{newlyPaid} payslips paid on {paymentDate:yyyy-MM-dd}.");
+        // Validation, finalization, lock and audit are saved together (one transaction).
+        _auditLogger.Add(AuditActions.PayrollFinalized, nameof(PayrollPeriod), period.Id, $"{period.Records.Count} records."); // no salary amounts in the audit log
+        _auditLogger.Add(AuditActions.PayrollLocked, nameof(PayrollPeriod), period.Id, "Approved → Finalized; payroll values locked.");
         await _payrollRepository.SaveChangesAsync(cancellationToken);
 
         return await MapPeriodAsync(period, cancellationToken);
@@ -452,6 +482,11 @@ public class PayrollService : IPayrollService
 
     private static void EnsureStatus(PayrollPeriod period, string action, params PayrollPeriodStatus[] allowed)
     {
+        if (period.IsLocked)
+        {
+            throw new ConflictException("Payroll is locked and cannot be modified.");
+        }
+
         if (!allowed.Contains(period.Status))
         {
             throw new ConflictException($"A {period.Status} payroll can't be {action}. Allowed when: {string.Join(", ", allowed)}.");
@@ -584,7 +619,7 @@ public class PayrollService : IPayrollService
             ? new Dictionary<Guid, PayslipCounts>()
             : await _payrollRepository.GetPayslipCountsAsync(periods.Select(p => p.Id).ToList(), cancellationToken);
         var names = await GetNamesAsync(
-            periods.SelectMany(p => new[] { p.CreatedByUserId, p.CalculatedByUserId, p.SubmittedByUserId, p.ApprovedByUserId, p.PaidByUserId, p.CancelledByUserId }),
+            periods.SelectMany(p => new[] { p.CreatedByUserId, p.CalculatedByUserId, p.SubmittedByUserId, p.ApprovedByUserId, p.FinalizedByUserId, p.PaidByUserId, p.CancelledByUserId }),
             cancellationToken);
 
         return periods.Select(period =>
@@ -616,6 +651,9 @@ public class PayrollService : IPayrollService
                 SubmittedBy = NameOf(names, period.SubmittedByUserId),
                 ApprovedAt = period.ApprovedAt,
                 ApprovedBy = NameOf(names, period.ApprovedByUserId),
+                FinalizedAt = period.FinalizedAt,
+                FinalizedBy = NameOf(names, period.FinalizedByUserId),
+                IsLocked = period.IsLocked,
                 PaidAt = period.PaidAt,
                 PaidBy = NameOf(names, period.PaidByUserId),
                 CancelledAt = period.CancelledAt,
@@ -639,9 +677,10 @@ public class PayrollService : IPayrollService
             CanEditRecords = hr && status is PayrollPeriodStatus.Draft or PayrollPeriodStatus.Calculated,
             CanSubmit = hr && status == PayrollPeriodStatus.Calculated && totals.EmployeeCount > 0 && totals.NeedsReviewCount == 0,
             CanApprove = admin && status == PayrollPeriodStatus.PendingApproval,
-            CanMarkPaid = admin && status == PayrollPeriodStatus.Approved,
+            CanFinalize = admin && status == PayrollPeriodStatus.Approved,
+            CanCreatePaymentBatch = admin && status == PayrollPeriodStatus.Finalized && payslips.Paid < payslips.Issued,
             CanCancel = hr && status is PayrollPeriodStatus.Draft or PayrollPeriodStatus.Calculated or PayrollPeriodStatus.PendingApproval,
-            CanGeneratePayslips = hr && status is PayrollPeriodStatus.Approved or PayrollPeriodStatus.Paid && payslips.Issued < totals.EmployeeCount,
+            CanGeneratePayslips = hr && status is PayrollPeriodStatus.Approved or PayrollPeriodStatus.Finalized or PayrollPeriodStatus.Paid && payslips.Issued < totals.EmployeeCount,
         };
     }
 
@@ -693,6 +732,8 @@ public class PayrollService : IPayrollService
             PayslipGeneratedAt = payslip?.GeneratedAt,
             PaymentStatus = payslip?.PaymentStatus.ToString(),
             PaymentDate = payslip?.PaymentDate,
+            PaymentMethod = payslip?.PaymentMethod?.ToString(),
+            PaymentReference = payslip?.PaymentReference,
             CanEdit = isHrOrAdmin && period?.Status is PayrollPeriodStatus.Draft or PayrollPeriodStatus.Calculated,
             CreatedAt = record.CreatedAt,
             UpdatedAt = record.UpdatedAt,

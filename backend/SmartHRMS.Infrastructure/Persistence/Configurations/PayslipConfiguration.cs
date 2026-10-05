@@ -31,6 +31,13 @@ public class PayslipConfiguration : IEntityTypeConfiguration<Payslip>
         builder.Property(p => p.PaymentDate)
             .HasColumnType("date");
 
+        builder.Property(p => p.PaymentMethod)
+            .HasConversion<string>()
+            .HasMaxLength(20);
+
+        builder.Property(p => p.PaymentReference)
+            .HasMaxLength(100);
+
         // One payslip per payroll record (and so per employee and period).
         builder.HasIndex(p => p.PayrollRecordId)
             .IsUnique();

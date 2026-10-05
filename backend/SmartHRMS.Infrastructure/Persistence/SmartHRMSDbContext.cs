@@ -49,6 +49,14 @@ public class SmartHRMSDbContext : DbContext
 
     public DbSet<Payslip> Payslips { get; set; }
 
+    public DbSet<PaymentBatch> PaymentBatches { get; set; }
+
+    public DbSet<PaymentBatchItem> PaymentBatchItems { get; set; }
+
+    public DbSet<PaymentTransaction> PaymentTransactions { get; set; }
+
+    public DbSet<PaymentStatusHistory> PaymentStatusHistories { get; set; }
+
     public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
         try

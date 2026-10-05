@@ -1,3 +1,4 @@
+import { Lock } from 'lucide-react'
 import type { PaymentStatus, PayrollRecordStatus, PayrollStatus } from '../../types/payroll'
 import { enumLabel } from '../../utils/formatters'
 
@@ -7,6 +8,7 @@ const PERIOD_CLASSES: Record<PayrollStatus, string> = {
   Calculated: 'badge-soft badge-info',
   PendingApproval: 'badge-soft badge-warning',
   Approved: 'badge-soft badge-primary',
+  Finalized: 'badge-soft badge-accent',
   Paid: 'badge-soft badge-success',
   Cancelled: 'badge-outline badge-error',
 }
@@ -15,6 +17,7 @@ const RECORD_CLASSES: Record<PayrollRecordStatus, string> = {
   Calculated: 'badge-soft badge-info',
   NeedsReview: 'badge-soft badge-error',
   Approved: 'badge-soft badge-primary',
+  Finalized: 'badge-soft badge-accent',
   Paid: 'badge-soft badge-success',
   Cancelled: 'badge-outline badge-error',
 }
@@ -31,4 +34,13 @@ export function PayrollRecordStatusBadge({ status }: { status: PayrollRecordStat
 export function PaymentStatusBadge({ status }: { status: PaymentStatus | null }) {
   if (!status) return <span className="badge badge-sm badge-outline whitespace-nowrap">Not issued</span>
   return <span className={`badge badge-sm whitespace-nowrap ${status === 'Paid' ? 'badge-soft badge-success' : 'badge-soft badge-warning'}`}>{status}</span>
+}
+
+/** Shown on finalized payroll: no payroll value can change any more. */
+export function LockedBadge() {
+  return (
+    <span className="badge badge-sm badge-outline gap-1 whitespace-nowrap" title="Finalized payroll is locked and can't be edited">
+      <Lock className="size-3" /> Locked
+    </span>
+  )
 }

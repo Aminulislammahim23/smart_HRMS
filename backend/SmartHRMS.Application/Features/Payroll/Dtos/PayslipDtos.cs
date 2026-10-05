@@ -41,12 +41,6 @@ public class PayrollHistoryQueryDto
     public string? SortDirection { get; set; }
 }
 
-/// <summary>Records a salary payment. The payment date defaults to today's office date and can't be in the future.</summary>
-public class RecordPaymentDto
-{
-    public DateOnly? PaymentDate { get; set; }
-}
-
 public class PayslipGenerationResultDto
 {
     public Guid PayrollPeriodId { get; set; }

@@ -1,8 +1,8 @@
 namespace smartHRMS.Domain.Enums;
 
 /// <summary>
-/// Draft → Calculated → PendingApproval → Approved → Paid. Draft, Calculated and PendingApproval can be Cancelled.
-/// Approved and Paid payroll is locked.
+/// Draft → Calculated → PendingApproval → Approved → Finalized → Paid. Draft, Calculated and PendingApproval can be
+/// Cancelled. Approved, Finalized and Paid payroll is locked; payments can only be made for Finalized payroll.
 /// </summary>
 public enum PayrollPeriodStatus
 {
@@ -11,5 +11,6 @@ public enum PayrollPeriodStatus
     PendingApproval = 3,
     Approved = 4,
     Paid = 5,
-    Cancelled = 6
+    Cancelled = 6,
+    Finalized = 7
 }

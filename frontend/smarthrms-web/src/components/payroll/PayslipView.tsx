@@ -49,6 +49,8 @@ export function PayslipView({ payslip }: { payslip: Payslip }) {
             ['Designation', payslip.designationName ?? '—'],
             ['Pay period', `${formatDate(payslip.periodStartDate)} – ${formatDate(payslip.periodEndDate)}`],
             ['Payment date', payslip.paymentDate ? formatDate(payslip.paymentDate) : 'Not paid yet'],
+            ...(payslip.paymentMethod ? [['Payment method', enumLabel(payslip.paymentMethod)]] : []),
+            ...(payslip.paymentReference ? [['Payment reference', payslip.paymentReference]] : []),
           ].map(([label, value]) => (
             <div key={label} className="flex justify-between gap-4 border-b border-base-200 pb-1">
               <span className="text-base-content/60">{label}</span>

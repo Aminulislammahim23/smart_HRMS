@@ -54,6 +54,14 @@ public class PayrollPeriodDto
 
     public string? ApprovedBy { get; set; }
 
+    /// <summary>When the payroll was finalized (and locked).</summary>
+    public DateTime? FinalizedAt { get; set; }
+
+    public string? FinalizedBy { get; set; }
+
+    /// <summary>True once finalized: no payroll value can change any more.</summary>
+    public bool IsLocked { get; set; }
+
     public DateTime? PaidAt { get; set; }
 
     public string? PaidBy { get; set; }
@@ -80,7 +88,11 @@ public class PayrollActionsDto
 
     public bool CanApprove { get; set; }
 
-    public bool CanMarkPaid { get; set; }
+    /// <summary>Admin, Approved payroll: finalize and lock it.</summary>
+    public bool CanFinalize { get; set; }
+
+    /// <summary>Admin, Finalized payroll with unpaid payslips: create a payment batch (the server checks for an open batch).</summary>
+    public bool CanCreatePaymentBatch { get; set; }
 
     public bool CanCancel { get; set; }
 
@@ -170,6 +182,11 @@ public class PayrollRecordDto
     public string? PaymentStatus { get; set; }
 
     public DateOnly? PaymentDate { get; set; }
+
+    /// <summary>BankTransfer, Cash, MobileBanking, Cheque or Other, once paid.</summary>
+    public string? PaymentMethod { get; set; }
+
+    public string? PaymentReference { get; set; }
 
     /// <summary>True while the period is Draft or Calculated and the user is HR/Admin.</summary>
     public bool CanEdit { get; set; }
@@ -348,6 +365,10 @@ public class PayslipDto
 
     /// <summary>Calendar date the salary was paid, once paid.</summary>
     public DateOnly? PaymentDate { get; set; }
+
+    public string? PaymentMethod { get; set; }
+
+    public string? PaymentReference { get; set; }
 
     /// <summary>When the payslip was issued (at approval); null for a preview.</summary>
     public DateTime? GeneratedAt { get; set; }

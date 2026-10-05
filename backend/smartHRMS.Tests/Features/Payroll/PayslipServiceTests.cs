@@ -142,67 +142,6 @@ public class PayslipServiceTests
         Assert.Equal("PS-20261001-EMP-001", payslip.PayslipNumber);
     }
 
-    // ---- payment ----
-
-    [Fact]
-    public async Task RecordPayment_PerPayslip_ThenPeriodBecomesPaidWhenAllArePaid()
-    {
-        var s = new Setup();
-        var id = await s.ApprovedOctoberAsync();
-
-        var first = await s.Payslips.RecordPaymentAsync(s.PayslipOf(s.Alice).Id, new RecordPaymentDto { PaymentDate = new DateOnly(2026, 11, 2) }, CancellationToken.None);
-        Assert.Equal("Paid", first.PaymentStatus);
-        Assert.Equal(new DateOnly(2026, 11, 2), first.PaymentDate);
-        Assert.Equal(PayrollPeriodStatus.Approved, s.Payroll.Periods.Single().Status);
-
-        await s.Payslips.RecordPaymentAsync(s.PayslipOf(s.Bob).Id, new RecordPaymentDto(), CancellationToken.None);
-
-        var period = s.Payroll.Periods.Single(p => p.Id == id);
-        Assert.Equal(PayrollPeriodStatus.Paid, period.Status);
-        Assert.All(period.Records, r => Assert.Equal(PayrollRecordStatus.Paid, r.Status));
-        Assert.Equal(new DateOnly(2026, 11, 5), s.PayslipOf(s.Bob).PaymentDate); // default: today's office date
-    }
-
-    [Fact]
-    public async Task RecordPayment_Twice_FutureDate_OrDateBeforePeriod_AreRefused()
-    {
-        var s = new Setup();
-        await s.ApprovedOctoberAsync();
-        var alice = s.PayslipOf(s.Alice).Id;
-
-        await Assert.ThrowsAsync<BadRequestException>(() => s.Payslips.RecordPaymentAsync(alice, new RecordPaymentDto { PaymentDate = new DateOnly(2026, 11, 6) }, CancellationToken.None));
-        await Assert.ThrowsAsync<BadRequestException>(() => s.Payslips.RecordPaymentAsync(alice, new RecordPaymentDto { PaymentDate = new DateOnly(2026, 9, 30) }, CancellationToken.None));
-        await s.Payslips.RecordPaymentAsync(alice, new RecordPaymentDto(), CancellationToken.None);
-        await Assert.ThrowsAsync<ConflictException>(() => s.Payslips.RecordPaymentAsync(alice, new RecordPaymentDto(), CancellationToken.None));
-    }
-
-    [Fact]
-    public async Task PeriodMarkPaid_PaysRemainingPayslips_AndKeepsEarlierPaymentDates()
-    {
-        var s = new Setup();
-        var id = await s.ApprovedOctoberAsync();
-        await s.Payslips.RecordPaymentAsync(s.PayslipOf(s.Alice).Id, new RecordPaymentDto { PaymentDate = new DateOnly(2026, 11, 1) }, CancellationToken.None);
-
-        await s.Payrolls.MarkPaidAsync(id, new RecordPaymentDto { PaymentDate = new DateOnly(2026, 11, 4) }, CancellationToken.None);
-
-        Assert.Equal(new DateOnly(2026, 11, 1), s.PayslipOf(s.Alice).PaymentDate);
-        Assert.Equal(new DateOnly(2026, 11, 4), s.PayslipOf(s.Bob).PaymentDate);
-        Assert.All(s.Payroll.Payslips, p => Assert.Equal(PaymentStatus.Paid, p.PaymentStatus));
-    }
-
-    [Theory]
-    [InlineData(UserRole.HR)]
-    [InlineData(UserRole.Employee)]
-    [InlineData(UserRole.Manager)]
-    public async Task OnlyAdmin_RecordsPayment(UserRole role)
-    {
-        var s = new Setup();
-        await s.ApprovedOctoberAsync();
-        s.User.SignInAs(role, s.Alice.Id);
-
-        await Assert.ThrowsAsync<ForbiddenException>(() => s.Payslips.RecordPaymentAsync(s.PayslipOf(s.Bob).Id, new RecordPaymentDto(), CancellationToken.None));
-    }
-
     // ---- employee isolation ----
 
     [Fact]
@@ -241,10 +180,11 @@ public class PayslipServiceTests
         s.User.SignInAs(UserRole.Employee, s.Alice.Id);
         Assert.Empty((await s.Payslips.GetMyPaymentsAsync(new PayrollHistoryQueryDto(), CancellationToken.None)).Items);
 
-        s.User.SignInAs(UserRole.Admin);
-        await s.Payslips.RecordPaymentAsync(s.PayslipOf(s.Alice).Id, new RecordPaymentDto(), CancellationToken.None);
+        // Payment itself goes through payment batches (PaymentServiceTests); here only the listing is tested.
+        var paid = s.PayslipOf(s.Alice);
+        paid.PaymentStatus = PaymentStatus.Paid;
+        paid.PaymentDate = new DateOnly(2026, 11, 2);
 
-        s.User.SignInAs(UserRole.Employee, s.Alice.Id);
         var payments = await s.Payslips.GetMyPaymentsAsync(new PayrollHistoryQueryDto(), CancellationToken.None);
         Assert.Equal("Paid", Assert.Single(payments.Items).PaymentStatus);
     }

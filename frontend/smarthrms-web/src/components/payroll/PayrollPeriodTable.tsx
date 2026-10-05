@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import type { PayrollPeriod } from '../../types/payroll'
 import { formatAmount, formatDate } from '../../utils/formatters'
 import { Table, type Column } from '../common/Table'
-import { PayrollStatusBadge } from './PayrollStatusBadge'
+import { LockedBadge, PayrollStatusBadge } from './PayrollStatusBadge'
 
 /** Payroll periods with their totals. */
 export function PayrollPeriodTable({ periods }: { periods: readonly PayrollPeriod[] }) {
@@ -19,7 +19,16 @@ export function PayrollPeriodTable({ periods }: { periods: readonly PayrollPerio
     },
     { key: 'start', header: 'Start', render: (p) => formatDate(p.startDate), className: 'hidden md:table-cell' },
     { key: 'end', header: 'End', render: (p) => formatDate(p.endDate), className: 'hidden md:table-cell' },
-    { key: 'status', header: 'Status', render: (p) => <PayrollStatusBadge status={p.status} /> },
+    {
+      key: 'status',
+      header: 'Status',
+      render: (p) => (
+        <div className="flex flex-wrap gap-1">
+          <PayrollStatusBadge status={p.status} />
+          {p.isLocked && <LockedBadge />}
+        </div>
+      ),
+    },
     { key: 'employees', header: 'Employees', render: (p) => p.employeeCount, className: 'hidden sm:table-cell text-right' },
     { key: 'gross', header: 'Gross', render: (p) => <span className="tabular-nums">{formatAmount(p.grossTotal)}</span>, className: 'hidden lg:table-cell text-right' },
     { key: 'deduction', header: 'Deduction', render: (p) => <span className="tabular-nums">{formatAmount(p.deductionTotal)}</span>, className: 'hidden xl:table-cell text-right' },

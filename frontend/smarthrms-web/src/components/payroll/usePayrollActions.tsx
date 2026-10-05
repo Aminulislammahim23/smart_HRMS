@@ -1,12 +1,13 @@
 import { useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useToast } from '../../hooks/useToast'
-import { approvePayroll, calculatePayroll, cancelPayroll, deletePayrollPeriod, generatePayslips, markPayrollPaid, submitPayroll } from '../../services/payrollService'
+import { approvePayroll, calculatePayroll, cancelPayroll, deletePayrollPeriod, finalizePayroll, generatePayslips, submitPayroll } from '../../services/payrollService'
 import type { PayrollCalculationResult, PayrollPeriod } from '../../types/payroll'
 import { formatAmount } from '../../utils/formatters'
 import { ConfirmDialog } from '../common/ConfirmDialog'
+import { CreatePaymentBatchModal } from '../payments/CreatePaymentBatchModal'
 
-export type PayrollAction = 'calculate' | 'submit' | 'approve' | 'markPaid' | 'cancel' | 'delete' | 'generatePayslips'
+export type PayrollAction = 'calculate' | 'submit' | 'approve' | 'finalize' | 'createBatch' | 'cancel' | 'delete' | 'generatePayslips'
 
 interface ActionText {
   title: string
@@ -36,11 +37,17 @@ const TEXT: Record<PayrollAction, ActionText> = {
     confirmLabel: 'Approve',
     tone: 'primary',
   },
-  markPaid: {
-    title: 'Mark as paid?',
-    message: (p) =>
-      `Record today as the payment date of every unpaid payslip of ${p.name} (net ${formatAmount(p.netTotal)}). Payslips already paid keep their own date. This is final.`,
-    confirmLabel: 'Mark as paid',
+  finalize: {
+    title: 'Finalize Payroll?',
+    message: () => 'After finalization, this payroll will be locked and normal payroll values can no longer be edited. Are you sure you want to continue?',
+    confirmLabel: 'Finalize Payroll',
+    tone: 'primary',
+  },
+  // Not a confirmation: createBatch opens the payment batch form instead.
+  createBatch: {
+    title: 'Create payment batch',
+    message: () => '',
+    confirmLabel: 'Create batch',
     tone: 'primary',
   },
   cancel: {
@@ -91,10 +98,12 @@ export function usePayrollActions(onDone: (result?: PayrollCalculationResult) =>
         await approvePayroll(period.id)
         notify('success', `${period.name} approved.`)
         break
-      case 'markPaid':
-        await markPayrollPaid(period.id)
-        notify('success', `Payment of ${period.name} recorded.`)
+      case 'finalize':
+        await finalizePayroll(period.id)
+        notify('success', `${period.name} finalized and locked.`)
         break
+      case 'createBatch':
+        return
       case 'generatePayslips': {
         const result = await generatePayslips(period.id)
         notify('success', `${result.generated} payslips generated.`)
@@ -115,8 +124,11 @@ export function usePayrollActions(onDone: (result?: PayrollCalculationResult) =>
     onDone()
   }
 
+  const batchFor = pending?.action === 'createBatch' ? pending.period : null
   const text = pending ? TEXT[pending.action] : null
-  const dialogs = (
+  const dialogs = batchFor ? (
+    <CreatePaymentBatchModal period={batchFor} onClose={() => setPending(null)} />
+  ) : (
     <ConfirmDialog
       open={pending !== null}
       title={text?.title ?? ''}

@@ -33,4 +33,10 @@ public class Payslip : BaseEntity
     public DateTime? PaidAt { get; set; }
 
     public Guid? PaidByUserId { get; set; }
+
+    /// <summary>How the salary was paid (copied from the paid payment transaction).</summary>
+    public PaymentMethod? PaymentMethod { get; set; }
+
+    /// <summary>Bank/mobile transfer reference of the payment, when known.</summary>
+    public string? PaymentReference { get; set; }
 }

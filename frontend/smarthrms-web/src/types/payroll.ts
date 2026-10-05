@@ -1,7 +1,7 @@
-export const PAYROLL_STATUSES = ['Draft', 'Calculated', 'PendingApproval', 'Approved', 'Paid', 'Cancelled'] as const
+export const PAYROLL_STATUSES = ['Draft', 'Calculated', 'PendingApproval', 'Approved', 'Finalized', 'Paid', 'Cancelled'] as const
 export type PayrollStatus = (typeof PAYROLL_STATUSES)[number]
 
-export const PAYROLL_RECORD_STATUSES = ['Calculated', 'NeedsReview', 'Approved', 'Paid', 'Cancelled'] as const
+export const PAYROLL_RECORD_STATUSES = ['Calculated', 'NeedsReview', 'Approved', 'Finalized', 'Paid', 'Cancelled'] as const
 export type PayrollRecordStatus = (typeof PAYROLL_RECORD_STATUSES)[number]
 
 /** What the signed-in user may do next, computed by the server (which checks again on every action). */
@@ -12,9 +12,12 @@ export interface PayrollActions {
   canEditRecords: boolean
   canSubmit: boolean
   canApprove: boolean
-  canMarkPaid: boolean
+  /** Admin, approved payroll: finalize and lock it. */
+  canFinalize: boolean
+  /** Admin, finalized payroll with unpaid payslips: pay them in a payment batch. */
+  canCreatePaymentBatch: boolean
   canCancel: boolean
-  /** Approved/Paid payroll with records that still lack a payslip. */
+  /** Approved/Finalized/Paid payroll with records that still lack a payslip. */
   canGeneratePayslips: boolean
 }
 
@@ -47,6 +50,10 @@ export interface PayrollPeriod {
   submittedBy: string | null
   approvedAt: string | null
   approvedBy: string | null
+  finalizedAt: string | null
+  finalizedBy: string | null
+  /** True once finalized: no payroll value can change any more. */
+  isLocked: boolean
   paidAt: string | null
   paidBy: string | null
   cancelledAt: string | null
@@ -97,6 +104,9 @@ export interface PayrollRecord {
   /** Null while no payslip has been issued. */
   paymentStatus: PaymentStatus | null
   paymentDate: string | null
+  /** How and with which reference the salary was paid (set by the payment batch once paid). */
+  paymentMethod: string | null
+  paymentReference: string | null
   canEdit: boolean
   createdAt: string
   updatedAt: string | null
@@ -184,6 +194,8 @@ export interface Payslip {
   paymentStatus: PaymentStatus
   /** Date the salary was paid ("yyyy-MM-dd"). */
   paymentDate: string | null
+  paymentMethod: string | null
+  paymentReference: string | null
   /** When the payslip was issued (at approval); null for a preview. */
   generatedAt: string | null
   /** False for a preview of payroll that isn't approved yet (HR/Admin only). */
