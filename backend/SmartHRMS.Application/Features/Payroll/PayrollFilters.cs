@@ -23,7 +23,10 @@ public sealed record PayrollHistoryFilter(
     PayrollPeriodStatus? PeriodStatus,
     PaymentStatus? PaymentStatus,
     string? Search,
-    bool OnlyWithPayslip);
+    bool OnlyWithPayslip,
+    Guid? PayrollPeriodId = null,
+    Guid? DesignationId = null,
+    PayrollRecordStatus? RecordStatus = null);
 
 public enum PayrollHistorySort
 {

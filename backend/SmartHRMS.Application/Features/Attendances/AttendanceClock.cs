@@ -31,6 +31,10 @@ public sealed class AttendanceClock
     /// <summary>Today's date in the office time zone.</summary>
     public DateOnly Today => DateOnly.FromDateTime(Now.DateTime);
 
+    /// <summary>The UTC instant at which an office date starts (midnight in the office time zone).</summary>
+    public DateTime StartOfDayUtc(DateOnly date) =>
+        TimeZoneInfo.ConvertTimeToUtc(DateTime.SpecifyKind(date.ToDateTime(TimeOnly.MinValue), DateTimeKind.Unspecified), _timeZone);
+
     /// <summary>The current office wall-clock time, to the second (the precision attendance is stored with).</summary>
     public TimeOnly CurrentTime => ToSeconds(TimeOnly.FromDateTime(Now.DateTime));
 

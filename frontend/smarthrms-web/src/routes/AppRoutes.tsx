@@ -41,6 +41,8 @@ const PayrollHistoryPage = lazy(() => import('../pages/payroll/PayrollHistoryPag
 const PaymentBatchesPage = lazy(() => import('../pages/payments/PaymentBatchesPage'))
 const PaymentBatchDetailsPage = lazy(() => import('../pages/payments/PaymentBatchDetailsPage'))
 const PaymentHistoryPage = lazy(() => import('../pages/payments/PaymentHistoryPage'))
+const PayrollReportsPage = lazy(() => import('../pages/payroll/PayrollReportsPage'))
+const PayrollAuditPage = lazy(() => import('../pages/payroll/PayrollAuditPage'))
 const UsersPage = lazy(() => import('../pages/users/UsersPage'))
 const NotFound = lazy(() => import('../pages/NotFound'))
 
@@ -120,10 +122,12 @@ export function AppRoutes() {
             <Route path="/payments/batches" element={<PaymentBatchesPage />} />
             <Route path="/payments/batches/:id" element={<PaymentBatchDetailsPage />} />
             <Route path="/payments/history" element={<PaymentHistoryPage />} />
+            <Route path="/payroll/reports" element={<PayrollReportsPage />} />
           </Route>
 
           <Route element={<RoleRoute roles={['Admin']} />}>
             <Route path="/users" element={<UsersPage />} />
+            <Route path="/payroll/audit" element={<PayrollAuditPage />} />
           </Route>
 
           <Route path="*" element={<NotFound />} />

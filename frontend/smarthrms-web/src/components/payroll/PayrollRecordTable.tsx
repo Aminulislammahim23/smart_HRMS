@@ -13,10 +13,13 @@ interface PayrollRecordTableProps {
   showPeriod?: boolean
   /** Adds the payslip payment status and date. */
   showPayment?: boolean
+  /** Payroll details (Day 19): designation, allowances, overtime, bonus, tax and other deductions, all from the server. */
+  showBreakdown?: boolean
 }
 
 /** Payroll records with view, edit (when the server allows it) and payslip actions. */
-export function PayrollRecordTable({ records, onView, onEdit, showPeriod = false, showPayment = false }: PayrollRecordTableProps) {
+export function PayrollRecordTable({ records, onView, onEdit, showPeriod = false, showPayment = false, showBreakdown = false }: PayrollRecordTableProps) {
+  const amount = (value: number) => <span className="tabular-nums">{formatAmount(value)}</span>
   const columns: Column<PayrollRecord>[] = [
     showPeriod
       ? { key: 'period', header: 'Period', render: (r) => <span className="font-medium">{r.periodName}</span> }
@@ -31,8 +34,22 @@ export function PayrollRecordTable({ records, onView, onEdit, showPeriod = false
           ),
         },
     { key: 'department', header: 'Department', render: (r) => r.departmentName ?? '—', className: showPeriod ? 'hidden' : 'hidden xl:table-cell' },
+    ...(showBreakdown ? [{ key: 'designation', header: 'Designation', render: (r: PayrollRecord) => r.designationName ?? '—', className: 'hidden 2xl:table-cell' }] : []),
     { key: 'basic', header: 'Basic', render: (r) => <span className="tabular-nums">{formatAmount(r.basicSalary)}</span>, className: 'hidden md:table-cell text-right' },
+    ...(showBreakdown
+      ? [
+          { key: 'allowances', header: 'Allowances', render: (r: PayrollRecord) => amount(r.totalAllowances), className: 'hidden xl:table-cell text-right' },
+          { key: 'overtime', header: 'Overtime', render: (r: PayrollRecord) => amount(r.overtimeAmount), className: 'hidden 2xl:table-cell text-right' },
+          { key: 'bonus', header: 'Bonus', render: (r: PayrollRecord) => amount(r.bonus), className: 'hidden 2xl:table-cell text-right' },
+        ]
+      : []),
     { key: 'gross', header: 'Gross', render: (r) => <span className="tabular-nums">{formatAmount(r.grossSalary)}</span>, className: 'text-right' },
+    ...(showBreakdown
+      ? [
+          { key: 'tax', header: 'Tax', render: (r: PayrollRecord) => amount(r.tax), className: 'hidden lg:table-cell text-right' },
+          { key: 'otherDeductions', header: 'Other deductions', render: (r: PayrollRecord) => amount(r.otherDeductions), className: 'hidden 2xl:table-cell text-right' },
+        ]
+      : []),
     { key: 'deduction', header: 'Deduction', render: (r) => <span className="tabular-nums">{formatAmount(r.totalDeduction)}</span>, className: 'hidden sm:table-cell text-right' },
     {
       key: 'net',

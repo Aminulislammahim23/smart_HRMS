@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { EmptyState } from '../../components/common/EmptyState'
 import { ErrorState } from '../../components/common/ErrorState'
+import { ExportButtons } from '../../components/common/ExportButtons'
 import { Loading } from '../../components/common/Loading'
 import { PageHeader } from '../../components/common/PageHeader'
 import { Pagination } from '../../components/common/Pagination'
@@ -12,7 +13,7 @@ import { PaymentStatusBadge, PayrollStatusBadge } from '../../components/payroll
 import { useApi } from '../../hooks/useApi'
 import { getDepartments } from '../../services/departmentService'
 import { getEmployees } from '../../services/employeeService'
-import { getPayrollHistory, getPayslips } from '../../services/payrollService'
+import { exportPayslips, getPayrollHistory, getPayrollPeriods, getPayslips } from '../../services/payrollService'
 import {
   HISTORY_SORTS,
   PAYMENT_STATUSES,
@@ -24,7 +25,7 @@ import {
   type PayrollRecord,
 } from '../../types/payroll'
 import { PAGE_SIZE_OPTIONS } from '../../utils/constants'
-import { enumLabel, formatAmount, formatDate } from '../../utils/formatters'
+import { enumLabel, formatAmount, formatDate, formatDateTime } from '../../utils/formatters'
 
 const CURRENT_YEAR = new Date().getFullYear()
 const MONTHS = Array.from({ length: 12 }, (_, i) => ({ value: i + 1, label: new Date(2000, i, 1).toLocaleDateString(undefined, { month: 'long' }) }))
@@ -44,6 +45,7 @@ function queryFromParams(params: URLSearchParams): PayrollHistoryQuery {
   const direction = params.get('sortDirection')
   return {
     employeeId: params.get('employeeId') || undefined,
+    payrollPeriodId: params.get('payrollPeriodId') || undefined,
     departmentId: params.get('departmentId') || undefined,
     month: readInt(params, 'month', 1, 12),
     year: readInt(params, 'year', 2000, 2100),
@@ -91,13 +93,13 @@ export default function PayrollHistoryPage({ mode = 'history' }: { mode?: 'histo
     return () => window.clearTimeout(timer)
   }, [searchInput, query.search, update])
 
-  const lookups = useCallback((signal: AbortSignal) => Promise.all([getEmployees(signal), getDepartments(signal)]), [])
+  const lookups = useCallback((signal: AbortSignal) => Promise.all([getEmployees(signal), getDepartments(signal), getPayrollPeriods({}, signal)]), [])
   const { data: lookupData } = useApi(lookups)
-  const [employees, departments] = lookupData ?? [[], []]
+  const [employees, departments, periods] = lookupData ?? [[], [], []]
 
   const load = useCallback((signal: AbortSignal) => (mode === 'history' ? getPayrollHistory(query, signal) : getPayslips(query, signal)), [mode, query])
   const { data, error, loading, reload } = useApi(load)
-  const filtered = !!(query.employeeId || query.departmentId || query.month || query.year || query.status || query.paymentStatus || query.search)
+  const filtered = !!(query.employeeId || query.payrollPeriodId || query.departmentId || query.month || query.year || query.status || query.paymentStatus || query.search)
 
   const reset = () => {
     setSearchInput('')
@@ -132,6 +134,9 @@ export default function PayrollHistoryPage({ mode = 'history' }: { mode?: 'histo
     { key: 'status', header: 'Payroll', render: (r) => <PayrollStatusBadge status={r.periodStatus} />, className: 'hidden md:table-cell' },
     { key: 'payment', header: 'Payment', render: (r) => <PaymentStatusBadge status={r.paymentStatus} /> },
     { key: 'paymentDate', header: 'Paid on', render: (r) => (r.paymentDate ? formatDate(r.paymentDate) : '—'), className: 'hidden lg:table-cell whitespace-nowrap' },
+    ...(mode === 'payslips'
+      ? [{ key: 'generated', header: 'Generated', render: (r: PayrollRecord) => (r.payslipGeneratedAt ? formatDateTime(r.payslipGeneratedAt) : '—'), className: 'hidden xl:table-cell whitespace-nowrap' }]
+      : []),
     {
       key: 'actions',
       header: <span className="sr-only">Actions</span>,
@@ -169,6 +174,7 @@ export default function PayrollHistoryPage({ mode = 'history' }: { mode?: 'histo
             ? 'Every payroll record with its payslip and payment status.'
             : 'Issued payslips. A payslip is issued when its payroll is approved.'
         }
+        actions={mode === 'payslips' && <ExportButtons label="Export payslips" onExport={(format) => exportPayslips(query, format)} />}
       />
 
       <div className="card bg-base-100 shadow-sm">
@@ -183,6 +189,14 @@ export default function PayrollHistoryPage({ mode = 'history' }: { mode?: 'histo
               {employees.map((e) => (
                 <option key={e.id} value={e.id}>
                   {e.fullName} ({e.employeeCode})
+                </option>
+              ))}
+            </select>
+            <select className="select select-sm w-full" value={query.payrollPeriodId ?? ''} onChange={(e) => update({ payrollPeriodId: e.target.value })} aria-label="Payroll period">
+              <option value="">All payroll periods</option>
+              {periods.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
                 </option>
               ))}
             </select>

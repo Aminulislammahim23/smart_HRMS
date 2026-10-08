@@ -39,4 +39,8 @@ public static class AuditActions
     public const string PaymentMarkedFailed = "PaymentMarkedFailed";
     public const string PaymentRetried = "PaymentRetried";
     public const string PaymentCancelled = "PaymentCancelled";
+
+    // Day 19: reporting and exports (no amounts in the details).
+    public const string PayrollReportExported = "PayrollReportExported";
+    public const string PayslipsExported = "PayslipsExported";
 }

@@ -14,7 +14,9 @@ import type {
   UpdatePayrollRecordRequest,
   UpdateSalaryStructureRequest,
 } from '../types/payroll'
+import type { ExportFormat } from '../types/payrollReport'
 import { api, unwrap, unwrapMessage } from './api'
+import { downloadExport } from './exportService'
 
 function params(query: object) {
   return Object.fromEntries(Object.entries(query).filter(([, value]) => value !== undefined && value !== ''))
@@ -134,4 +136,18 @@ export function getSalaryStructure(employeeId: string, signal?: AbortSignal): Pr
 
 export function updateSalaryStructure(employeeId: string, data: UpdateSalaryStructureRequest): Promise<SalaryStructure> {
   return unwrap(api.put<ApiResponse<SalaryStructure>>(`/employees/${employeeId}/salary-structure`, data))
+}
+
+// ---- payslip export (Day 19) ----
+
+/** Issued payslips with the list filters as CSV or Excel (HR/Admin). */
+export function exportPayslips(query: PayrollHistoryQuery, format: ExportFormat): Promise<void> {
+  // Paging and sorting don't apply: the whole filtered list is exported.
+  const filters = { ...query, page: undefined, pageSize: undefined, sortBy: undefined, sortDirection: undefined }
+  return downloadExport('/payroll/payslips/export', { ...params(filters), format }, 'payslips', format)
+}
+
+/** The signed-in employee's own payslips as CSV or Excel (employee from the token). */
+export function exportMyPayslips(format: ExportFormat): Promise<void> {
+  return downloadExport('/payroll/me/payslips/export', { format }, 'my-payslips', format)
 }

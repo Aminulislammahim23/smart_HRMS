@@ -1,7 +1,7 @@
 # SmartHRMS Backend Documentation
 
-> Describes the code, database and API **as they are after Day 18 (2026-10-05)**. Everything marked as implemented was
-> verified at runtime against the SQL Server database (see §22, §23 and §25–§28). Planned work is listed only in §24
+> Describes the code, database and API **as they are after Day 19 (2026-10-08)**. Everything marked as implemented was
+> verified at runtime against the SQL Server database (see §22, §23 and §25–§29). Planned work is listed only in §24
 > and is clearly marked as not implemented. Day 16 also delivered the authentication, leave and audit groundwork that
 > payroll depends on (§26.1–§26.4), because no earlier day had built it.
 
@@ -12,7 +12,7 @@
 **SmartHRMS** is a Human Resource Management System. This repository contains its backend: an ASP.NET Core Web API
 that stores HR data in SQL Server and serves it as JSON to the React frontend in `frontend/smarthrms-web`.
 
-**Current scope (Day 1–13):**
+**Current scope (Day 1–19):**
 
 | Area | What exists |
 |---|---|
@@ -21,10 +21,14 @@ that stores HR data in SQL Server and serves it as JSON to the React frontend in
 | Employee profile | Personal details (gender, marital status, blood group, nationality, NID, passport), addresses, emergency contacts, education, work experience, and a one-call profile view |
 | Employee documents | Upload, list, view metadata, download, edit metadata and soft-delete HR documents (NID, passport, certificates, CV, ...) kept in private storage |
 | Attendance (Day 13) | Check-in/check-out at office time, working-minute calculation, Present/Late/Absent/HalfDay/Leave status, HR-maintained records (CRUD), history and filtering — see §25 |
+| Security (Day 16) | JWT sign-in with roles (Employee, Manager, HR, Admin), server-side authorization on every endpoint, audit log — see §17 and §26 |
+| Leave (Day 16) | Apply, manager/HR review, cancel — see §26.3 |
+| Payroll (Days 16–19) | Salary structures, payroll calculation and approval (§26), payslips and payroll history (§27), finalization and payment batches (§28), reporting, exports and the payroll audit trail (§29) |
 | Platform | Standard response envelope, centralized error handling, validation, OpenAPI/Swagger, CORS for the frontend |
 
-**Not implemented:** authentication and authorization (every endpoint is anonymous), leave management, payroll,
-recruitment, performance (see §17 and §24).
+**Not implemented:** recruitment, performance, leave balances, and the items in §24.
+
+*(Days 1–13 originally ran without authentication; that was added on Day 16.)*
 
 ### Development history
 
@@ -46,6 +50,7 @@ recruitment, performance (see §17 and §24).
 | 16 | Authentication and roles, manager relationship, leave, audit log, salary structures and payroll processing (§26) |
 | 17 | Payslips issued at approval, payroll history, employee self-service payroll, provident fund (§27) |
 | 18 | Payroll finalization and lock; payment batches, transactions and status history replace direct "mark paid" (§28) |
+| 19 | Payroll reporting (period history, summary, departments, employees, deductions, allowances), CSV/Excel export, payroll details and payslip history filters, payroll audit trail (§29) |
 
 ---
 
@@ -582,6 +587,8 @@ Validation always happens on the server; the frontend repeats the rules only for
 | Leave of anyone (approve/reject/cancel) | — | — | ✓ | ✓ |
 | Salary structures, payroll periods, calculation, records, submit | — | — | ✓ | ✓ |
 | Payment batches and payment history (view) | — | — | ✓ | ✓ |
+| Payroll reports and report/payslip-list exports (Day 19) | own payslips only (export of own list) | own payslips only | ✓ | ✓ |
+| Payroll audit trail (`/api/audit-logs?category=payroll`) | — | — | — | ✓ |
 | Approve and finalize payroll; create, process, pay, fail, retry and cancel payments (never one's own salary) | — | — | — | ✓ |
 | Users & roles, audit log | — | — | — | ✓ |
 
@@ -660,6 +667,9 @@ Applied migrations (all 11 applied; no pending model changes):
 | 9 | `AddAuthLeaveAuditPayroll` (Day 16) | `ApplicationUsers`: `Role`, `SecurityStamp`, lockout and last-login columns, `EmployeeId` nullable with a filtered unique index, `PasswordHash` → `nvarchar(256)` (table was empty); `Employees.ManagerId` (self FK + check); new tables `LeaveRequests`, `AuditLogs`, `EmployeeSalaryStructures`, `PayrollPeriods`, `PayrollRecords` (see §26.5). Additive for every table that held data |
 | 10 | `AddPayslipsAndProvidentFund` (Day 17) | new table `Payslips` (unique `PayslipNumber` and `PayrollRecordId`, FKs NO ACTION, check "paid ⇔ payment date"); `PayrollRecords.ProvidentFund` and `EmployeeSalaryStructures.MonthlyProvidentFund` (`decimal(18,2)`, default 0); the two non-negative checks re-created to include them. Purely additive (both payroll tables were empty) |
 | 11 | `AddPayrollFinalizationAndPayments` (Day 18) | `PayrollPeriods`: `FinalizedAt`, `FinalizedByUserId` (FK), `IsLocked`; `Payslips`: `PaymentMethod`, `PaymentReference`; new tables `PaymentBatches`, `PaymentBatchItems`, `PaymentTransactions`, `PaymentStatusHistories` with filtered unique indexes against duplicate payment (see §28.15). Purely additive |
+
+Day 19 needed no migration: reporting, exports and the audit trail read the existing payroll, payslip, payment and
+`AuditLogs` tables.
 
 Before each schema change since Day 9 a verified copy-only backup was taken
 (`SmartHRMSDB_before_Day9/10/11/12/13/16/17/18_*.bak` in the SQL Server backup folder). Migrations are only generated after a
@@ -757,9 +767,15 @@ every write of the Day 1–13 modules is HR/Admin.
 | POST | `/api/payroll/{periodId}/cancel` | → Cancelled (HR/Admin) | `CancelPayrollDto` (optional) | `PayrollPeriodDto` | 200, 404, 409 |
 | GET | `/api/payroll/employee/{employeeId}` | payroll history (own: Approved/Paid only) | — | `PayrollRecordDto[]` | 200, 403, 404 |
 | GET | `/api/payroll/payslip/{recordId}` | payslip (own after approval, HR/Admin) | — | `PayslipDto` | 200, 404 |
-| GET | `/api/audit-logs[?entityType&entityId&action&take]` | audit log (Admin) | query | `AuditLogDto[]` | 200, 400 |
-| GET | `/api/payroll/history[?employeeId&departmentId&month&year&status&paymentStatus&search&page&pageSize&sortBy&sortDirection]` | payroll history, every record (HR/Admin) | query | `PagedResult<PayrollRecordDto>` | 200, 400 |
+| GET | `/api/audit-logs[?category&entityType&entityId&action&username&from&to&take]` | audit log (Admin); `category=payroll` = payroll trail (Day 19) | query | `AuditLogDto[]` | 200, 400 |
+| GET | `/api/payroll/history[?employeeId&departmentId&designationId&payrollPeriodId&recordStatus&month&year&status&paymentStatus&search&page&pageSize&sortBy&sortDirection]` | payroll history, every record (HR/Admin); with `payrollPeriodId` = payroll details (Day 19) | query | `PagedResult<PayrollRecordDto>` | 200, 400 |
 | GET | `/api/payroll/payslips[?same filters]` | issued payslips (HR/Admin) | query | `PagedResult<PayrollRecordDto>` | 200, 400 |
+| GET | `/api/payroll/payslips/export[?same filters&format]` | issued payslips as CSV or XLSX (HR/Admin; Day 19) | query | file | 200, 400, 403 |
+| GET | `/api/payroll/me/payslips/export[?format]` | own payslips as CSV or XLSX (employee from the token; Day 19) | query | file | 200, 400 |
+| GET | `/api/payroll/reports/periods[?search&month&year&status&from&to&page&pageSize]` | payroll history by period with totals (HR/Admin; Day 19) | query | `PagedResult<PayrollPeriodHistoryDto>` | 200, 400 |
+| GET | `/api/payroll/reports/summary`, `/departments`, `/deductions`, `/allowances` `[?month&year&payrollPeriodId&employeeId&departmentId&designationId&status&from&to&groupBy]` | grouped reports (HR/Admin; Day 19) | query | `PayrollReportDto` | 200, 400 |
+| GET | `/api/payroll/reports/employees[?same filters&search&page&pageSize]` | employee payroll report (HR/Admin; Day 19) | query | `PagedResult<PayrollRecordDto>` | 200, 400 |
+| GET | `/api/payroll/reports/{report}/export[?same filters&format]` | report as CSV or XLSX: periods, summary, departments, employees, deductions, allowances (HR/Admin; Day 19) | query | file | 200, 400, 404 |
 | GET | `/api/payroll/payslips/{id}` | one payslip (owner or HR/Admin) | — | `PayslipDto` | 200, 404 |
 | POST | `/api/payroll/{periodId}/payslips` | issue missing payslips of approved payroll (HR/Admin) | — | `PayslipGenerationResultDto` | 200, 404, 409 |
 | GET | `/api/payroll/employee/{employeeId}/payslips[?filters]` | one employee's payslips (self or HR/Admin) | query | `PagedResult<PayrollRecordDto>` | 200, 400, 403, 404 |
@@ -793,10 +809,12 @@ dotnet test smartHRMS.slnx
 dotnet ef migrations has-pending-model-changes --project SmartHRMS.Infrastructure --startup-project smartHRMS.Api
 ```
 
-| Kind | What | Result (latest run: Day 18, 2026-10-05) |
+| Kind | What | Result (latest run: Day 19, 2026-10-08) |
 |---|---|---|
 | Build | `dotnet build` | 0 warnings, 0 errors |
-| Unit tests | 339 xUnit tests (services, DTO validation, envelope, photo, documents, profile records, attendance; Day 16: payroll calculator, payroll workflow and access, leave, sign-in, users, managers; Day 17: payslip issuing, isolation, history filters and paging, provident fund; Day 18: finalization and lock, payment batches, transitions, duplicates, authorization, employee isolation) with in-memory fakes and a fake `TimeProvider` | 339 / 339 passed |
+| Unit tests | 371 xUnit tests (services, DTO validation, envelope, photo, documents, profile records, attendance; Day 16: payroll calculator, payroll workflow and access, leave, sign-in, users, managers; Day 17: payslip issuing, isolation, history filters and paging, provident fund; Day 18: finalization and lock, payment batches, transitions, duplicates, authorization, employee isolation; Day 19: reports, exports, audit trail) with in-memory fakes and a fake `TimeProvider` | 371 / 371 passed |
+| Runtime API (Day 19) | period history, payroll details, payslip history and access, reports (totals compared with SQL), exports, every role + unauthenticated, payroll audit trail | 274 / 274 |
+| Browser (Day 19 frontend) | payroll periods history, payroll details, payslips, reports dashboard and tabs, CSV/Excel downloads, audit trail, role visibility, mobile/tablet | 14 / 14, no JS exceptions or console errors |
 | Runtime API (Day 18) | finalization rules and lock, batch creation and totals, concurrent duplicate batches, processing, paid/failed/retry/cancel, invalid transitions, own-salary rule, every role + unauthenticated, employee isolation, history filters, DB constraints, audit (no amounts) | 250 / 250 |
 | Browser (Day 18 frontend) | finalize dialog and lock, create batch, batch list/details (search, filters, paging), processing, paid/failed/retry with history, payment history filters, employee payment view, role visibility, mobile/tablet | 20 / 20, no JS exceptions or console errors |
 | Migrations (Day 18) | `has-pending-model-changes`, filtered indexes queried in SQL Server | 11 / 11 applied, no drift |
@@ -822,7 +840,7 @@ The repository itself contains only unit tests (see §24).
 
 ---
 
-## 23. Day 1–18 Completion Matrix
+## 23. Day 1–19 Completion Matrix
 
 | Day | Feature | Status | Evidence |
 |-----|---------|--------|----------|
@@ -938,6 +956,12 @@ The repository itself contains only unit tests (see §24).
 | 18 | Authorization per role, unauthenticated 401, Admin can't pay own salary | PASS | Day 18 suite + unit tests |
 | 18 | Employee payment view (own only) | PASS | Day 18 suite + browser suite |
 | 18 | Frontend: finalize dialog, batches, batch details, payment history, My Payroll payments | PASS | browser suite (20 / 20) |
+| 19 | Payroll history by period (totals, processed/finalized dates, filters, paging) | PASS | Day 19 suite + unit tests |
+| 19 | Payroll details (paged records, breakdown, filters, sort; finalized read-only) | PASS | Day 19 suites |
+| 19 | Payslip history (period filter, generated date) and payslip access rules | PASS | Day 19 suites |
+| 19 | Reports: summary/salary expense, departments, employees, deductions, allowances/bonus; totals equal SQL sums | PASS | Day 19 suite + unit tests |
+| 19 | CSV/XLSX export of reports and payslips, authorization and audit | PASS | Day 19 suites + unit tests |
+| 19 | Payroll audit trail (category, user, date filters; status transitions; no amounts) | PASS | Day 19 suites + unit tests |
 
 ---
 
@@ -956,7 +980,7 @@ The repository itself contains only unit tests (see §24).
 | Low | No payment reversal | A Paid payment is final; correcting it needs a future reversal workflow |
 | Low | Finalized payroll has no unlock | A finalized payroll can only be paid; corrections need a future correction workflow |
 | Low | Absences are not deducted by default | `Payroll:DeductRecordedAbsences` turns on deduction of explicit Absent days; days without any attendance record are never deducted |
-| Medium | Pagination only on payroll history, payslip and payment lists | Other lists return every matching row. Attendance grows by one row per employee per day, so clients should always pass a date or range |
+| Medium | Pagination only on payroll history, payslip, payment and report lists | Other lists return every matching row. Attendance grows by one row per employee per day, so clients should always pass a date or range |
 | Low | Attendance: no overnight shifts | Check-in/out apply to one office date; a shift past midnight must be corrected by HR |
 | Low | Attendance: no weekends, holidays or leave integration | Absent/Leave are recorded explicitly; nothing is generated automatically for missing days |
 | Low | Attendance: Late rule only | Any check-in up to workday start + grace is Present, including very early ones; half days are not detected automatically |
@@ -1854,3 +1878,238 @@ baseline, except two entries caused by one rejected sign-in during setup (§28.1
   payslip) and their status history; read-only.
 - **Removed:** the Day 17 "Record payment" panel on the payslip page.
 - **Payslip:** now shows the payment method and reference.
+
+---
+
+## 29. Day 19 — Payroll Reporting, Payslip History & Payroll Audit Trail
+
+### 29.1 Audit: what already existed and was reused
+
+| Day 19 requirement | Before Day 19 | Day 19 |
+|---|---|---|
+| Payroll history | Record-level history `/api/payroll/history` (Day 17); period list `/api/payroll/periods` (gross/deduction/net only, unpaged) | **Added** period-level history with full totals, filters and paging: `/api/payroll/reports/periods`. The *Payroll periods* page now uses it |
+| Payroll details | `/api/payroll/periods/{id}/records` (unpaged) | **Reused** `/api/payroll/history` with new `payrollPeriodId`, `designationId` and `recordStatus` filters (server paging, sorting); the records page now uses it |
+| Payslip history | `/api/payroll/payslips` with employee, department, month, year, status, payment status, search, paging (Day 17) | **Reused**, plus the payroll-period filter and a Generated column |
+| Payslip view, print / PDF | Payslip page with print CSS ("Save as PDF") (Day 17) | **Reused unchanged.** It already shows every field the brief lists |
+| Reports | none | **Added** summary, department, employee, deduction and allowance/bonus reports |
+| Export | none (no export library in the project) | **Added** CSV and XLSX using only the .NET standard library (`TableExporter`) |
+| Audit log | Generic `AuditLogs` table, `IAuditLogger`, Admin-only `GET /api/audit-logs` | **Reused**, with a `category=payroll` filter, user and date filters, status transitions in details, export events, and an Admin page |
+| Payroll statuses | Draft, Calculated, PendingApproval, Approved, Finalized, Paid, Cancelled | **Unchanged.** "Processing/Processed" in the brief map to Calculated/PendingApproval; no new status was introduced |
+| Manager access | Managers see their reports' basic record but no salary (Day 16 rule) | **Unchanged.** Managers get no payroll report or payslip access beyond their own payslips |
+
+### 29.2 Database
+
+No migration. Reporting reads the existing `PayrollPeriods`, `PayrollRecords`, `Payslips` and `AuditLogs` tables,
+and every aggregate is computed by SQL Server (`GROUP BY`, `SUM`, `COUNT(DISTINCT)`). `has-pending-model-changes`
+reports no drift.
+
+### 29.3 Payroll history (period level)
+
+`GET /api/payroll/reports/periods` (HR/Admin) returns one row per payroll period, any status.
+
+- **Row content:**
+  - name, start and end dates, month and year, status, lock flag;
+  - employees, basic salary, allowances, overtime, bonus, gross, tax, deductions, net, paid and outstanding net;
+  - created, processed (`calculatedAt`), approved, finalized, paid and cancelled times.
+- **Filters:** `search` (period name), `month`, `year`, `status`, `from` / `to` (periods overlapping the range).
+  Paging: `page`, `pageSize` (1–100).
+- **Frontend:** *Payroll periods* (`/payroll/periods`), with filters in the URL, CSV/Excel export, View details and
+  Records actions.
+
+### 29.4 Payroll details
+
+The period page (`/payroll/{id}`) and its records page (`/payroll/{id}/records`).
+
+- **Data source:** the records page reads `GET /api/payroll/history?payrollPeriodId=…`.
+- **Server-side features:** search, department, designation, record status, sorting (employee, gross, net) and paging.
+- **Columns:**
+  - employee ID and name, department and designation;
+  - basic, allowances, overtime, bonus, gross;
+  - tax, other deductions, total deduction, net;
+  - record and payment status.
+- **Server-computed totals.** `PayrollRecordDto` gained two fields so the browser never adds amounts:
+  - `totalAllowances` (house rent + medical + transport + other);
+  - `otherDeductions` (total deduction − tax).
+- **Finalized payroll is read-only:**
+  - the page shows a lock notice and no Edit action (`canEdit` is false);
+  - the API refuses any change with 409 "Payroll is locked and cannot be modified." (Day 18 rule; re-verified).
+- **Export:** CSV/Excel through the employee report, limited to the period.
+
+### 29.5 Payslip history
+
+- **Lists:**
+  - `GET /api/payroll/payslips` (HR/Admin) now also filters by `payrollPeriodId`, `designationId` and `recordStatus`;
+  - the employee's own list is `GET /api/payroll/me/payslips`.
+- **Columns:** employee, employee ID, payroll month, gross, deduction, net, generated date, payroll status and payment
+  status.
+- **Actions:** view, print (print-ready page, "Save as PDF"), and export of the list as CSV/Excel.
+- **Access:**
+  - **Employees:** only their own payslips. Another payslip id gives 404, `/me` ignores a sent `employeeId`, and the
+    HR lists give 403.
+  - **Managers:** only their own payslips. A report's payslip gives 404, and lists give 403.
+  - **HR/Admin:** every payslip.
+
+### 29.6 Payroll reports
+
+All reports are `GET /api/payroll/reports/…`, HR/Admin only.
+
+**Filters** (all server-side): `month`, `year`, `payrollPeriodId`, `employeeId`, `departmentId`, `designationId`,
+`status`, `from`, `to`, plus `search` for the employee report.
+- **Default scope:** issued payroll only (Approved, Finalized, Paid). A `status` filter selects one status instead,
+  for example `Calculated` to preview a draft.
+- **Department and designation filters** use the employee's current assignment, as in the Day 17 history.
+- **Department grouping** uses the department name stored on the payroll record, so history keeps the name it had at
+  calculation.
+
+| Report | Endpoint | Content |
+|---|---|---|
+| Monthly payroll summary / salary expense | `summary` | Totals: employees (distinct), records, basic, allowances, overtime, bonus, gross, tax, other deductions, total deduction, net, paid, outstanding. One row per payroll period |
+| Department-wise | `departments` | Per department: employees, gross, total deduction, net (also basic, allowances, tax) |
+| Employee payroll | `employees` | One row per employee and period: department, designation, period, gross, deduction, net, payslip, payment status; paged |
+| Deduction summary | `deductions` (`groupBy=period\|department`) | Tax, provident fund, unpaid leave, advance, loan, other, total |
+| Allowance / bonus summary | `allowances` (`groupBy=period\|department`) | House rent, medical, transport, other allowance, total allowances, overtime, bonus |
+
+**Implementation:**
+- `PayrollReportQueries` holds the filters and `GroupBy`/`Sum` projections as LINQ, written once.
+  `PayrollReportRepository` runs them in SQL Server, and the unit-test fake runs the identical code in memory.
+- Amounts are the stored payroll record values; nothing is recalculated.
+
+**Frontend:** *Payroll reports* (`/payroll/reports`):
+- shared filter bar;
+- cards: total payroll records, employees, total gross (salary expense), total deduction (with tax), total net (with
+  paid and outstanding);
+- one tab per report, each with CSV/Excel export;
+- a group-by toggle on the deduction and allowance reports;
+- proportional bars for salary expense by period and each department's share of net. No chart library is installed,
+  so none was added.
+
+### 29.7 Export
+
+**Formats:**
+- **CSV:** UTF-8 with BOM so Excel detects the encoding.
+- **XLSX:** a minimal single-sheet Office Open XML workbook with a bold header, a frozen first row and number formats.
+- **PDF:** the existing print-ready payslip page ("Print / save as PDF").
+
+Both CSV and XLSX are produced by `smartHRMS.Application.Common.Export.TableExporter` with only the .NET standard
+library. No package was added.
+
+| Endpoint | Who | Content |
+|---|---|---|
+| `GET /api/payroll/reports/{report}/export?format=csv\|xlsx` | HR, Admin | periods, summary, departments, employees, deductions or allowances, with the report's filters; grouped reports end with a Total row |
+| `GET /api/payroll/payslips/export?format=…` | HR, Admin | issued payslips with the list filters |
+| `GET /api/payroll/me/payslips/export?format=…` | any signed-in employee | own payslips only (employee from the token) |
+
+**Rules:**
+- **Same permissions as the lists:** an employee or manager gets 403 for report and HR payslip exports, and 401
+  without a token.
+- **Row cap:** at most 10,000 rows. Larger exports get 400 asking for narrower filters.
+- **Formula injection:** CSV text starting with `= + - @` or a tab is prefixed with an apostrophe.
+- **File names:** the browser names the file `{report}-{yyyy-MM-dd}.{csv|xlsx}`, because the server's
+  `Content-Disposition` isn't readable across origins.
+- **Auditing:** every export writes `PayrollReportExported` or `PayslipsExported` with the report, format, row count
+  and filter ids, never amounts.
+
+### 29.8 Payroll audit trail
+
+**The existing `AuditLogs` table and `IAuditLogger` are reused.** No second audit mechanism was added.
+
+**Query:** `GET /api/audit-logs` (Admin) gained:
+- `category=payroll`: the payroll entity types `PayrollPeriod`, `PayrollRecord`, `Payslip`, `EmployeeSalaryStructure`,
+  `PaymentBatch`, `PaymentTransaction` and `PayrollReport`;
+- `username` (contains);
+- `from` / `to`: office dates, converted to UTC with the office time zone.
+
+**Entries:**
+- Each entry holds the user id and user name, action, entity, entity id, time and details.
+- **Status transitions:**
+  - Before Day 19, Created, Submitted, Approved and Cancelled had no transition in their details. They now read for
+    example "→ Draft", "Calculated → PendingApproval", "PendingApproval → Approved" and "PendingApproval → Cancelled:
+    reason".
+  - Calculated reads "Draft → Calculated: …", and Finalized/Locked "Approved → Finalized".
+- **Payroll actions recorded:**
+  - created, updated, deleted;
+  - calculated (processed), record modified;
+  - submitted, approved, finalized, locked, paid, cancelled;
+  - payslips generated, payslip viewed;
+  - salary structure changed;
+  - payment batch and payment actions (Day 18);
+  - report exported, payslips exported (new).
+- **No amounts:** salary and payment amounts are never written into audit details. A live check on every run confirms
+  it.
+
+**Frontend:** *Payroll audit trail* (`/payroll/audit`, Admin, under Administration):
+- filters: action, user name, date range, number of entries;
+- an entity view when opened with `?entityId=`;
+- links to the period, payslip or payment batch.
+
+### 29.9 Authorization summary
+
+| | Employee | Manager | HR | Admin |
+|---|---|---|---|---|
+| Own payslips (view, print, export own list) | ✓ | ✓ | ✓ | ✓ |
+| Another employee's payslip | 404 | 404 (also direct reports) | ✓ | ✓ |
+| Payroll history (period and record level), payroll details | 403 | 403 | ✓ | ✓ |
+| Payroll reports and report exports, payslip-list export | 403 | 403 | ✓ | ✓ |
+| Payroll audit trail | 403 | 403 | 403 | ✓ |
+| Edit finalized payroll | — | — | 409 | 409 |
+
+**How it is enforced:**
+- **Role checks twice:** in the controller policy and again in the service.
+- **Employee identity:** comes from the token for every `me` endpoint. Query parameters such as `employeeId` can't
+  widen what a caller sees.
+- **Frontend:** it only hides what the server refuses.
+
+### 29.10 Known limitations
+
+- **Audit log reading:** up to 500 newest entries per request (no paging).
+- **Department and designation filters:** apply to the employee's *current* assignment. Department grouping uses the
+  department stored on the record.
+- **Exports:** limited to 10,000 rows. XLSX has one sheet and no charts.
+- **PDF:** produced through the browser's print dialog, not generated on the server.
+- **Charts:** simple proportional bars; there is no chart library.
+- **Report scope:** reports cover issued payroll by default; draft payroll needs an explicit status filter.
+
+### 29.11 Day 19 testing checklist (executed 2026-10-08)
+
+| Suite | Result |
+|---|---|
+| `dotnet build` | 0 warnings, 0 errors |
+| Unit tests | 371 / 371 (32 new: reports, filters, totals, exports, CSV injection guard, payslip export isolation, audit category and dates, workflow transitions) |
+| Day 19 live API (`TEST-D19-*`) | 274 / 274; every amount compared with SQL Server's own `SUM` |
+| Day 19 browser | 14 / 14, no JS exceptions or console errors |
+| Day 18 API / browser (regression) | 250 / 250, 20 / 20 |
+| Day 17 API / browser (regression) | 195 / 195, 13 / 13 |
+| Day 16 API / browser (regression) | 260 / 260, 28 / 28 |
+| Day 10–13 API (regression) | 193 + 167 + 108 + 137, and 56 / 57 (the old OpenAPI check expects 26 routes) |
+| Day 13 / 14 browser (regression) | 59 / 59, 28 / 28 |
+| `npm run build`, `tsc`, `eslint` | pass |
+| Migrations | no Day 19 migration; `has-pending-model-changes` clean |
+
+- **Day 16/17 totals vs Day 18:** each total is 4 lower than on Day 18. Those suites loop over every payment, and
+  fewer leftover TEST employees existed this time. They have no failures.
+- **Two browser tests needed waits:**
+  - two filters changed within one React render (faster than a person can act) lost the first URL update;
+  - a sidebar check ran before the page shell had mounted after sign-in.
+
+  The tests now wait for the page to settle, and both suites pass.
+
+**Checklist:**
+- **A. Payroll history:** [x] periods load [x] search [x] month [x] year [x] status [x] date range [x] pagination
+  [x] details
+- **B. Payroll details:** [x] records load [x] values match the database [x] department filter [x] designation filter
+  [x] search [x] sort [x] finalized is read-only (UI and 409)
+- **C. Payslip:**
+  - [x] own payslip [x] another employee's payslip → 404
+  - [x] HR sees all [x] manager limited to own
+  - [x] values match payroll [x] print [x] export (CSV/XLSX, own and HR)
+- **D. Reports:** [x] monthly [x] department [x] employee [x] deduction [x] allowance/bonus [x] filters [x] totals
+  equal SQL sums
+- **E. Authorization:** [x] employee [x] manager [x] HR [x] admin [x] unauthenticated 401 on every report and export
+  endpoint
+- **F. Audit:** [x] processing (calculated) [x] submission [x] approval [x] finalization [x] payslip generation
+  [x] record modification [x] exports [x] user and timestamp [x] no amounts
+- **G. Frontend:** [x] no console errors [x] loading, empty and error states [x] responsive at 390 / 820 px
+  [x] pagination [x] filters
+
+All test data used `TEST-*` prefixes and was removed. The checksum of every real table is identical to the pre-test
+baseline.

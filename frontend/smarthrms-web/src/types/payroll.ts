@@ -107,6 +107,10 @@ export interface PayrollRecord {
   /** How and with which reference the salary was paid (set by the payment batch once paid). */
   paymentMethod: string | null
   paymentReference: string | null
+  /** House rent + medical + transport + other allowance, computed by the server from the stored record. */
+  totalAllowances: number
+  /** Every deduction except tax (total deduction − tax), computed by the server. */
+  otherDeductions: number
   canEdit: boolean
   createdAt: string
   updatedAt: string | null
@@ -252,6 +256,10 @@ export type HistorySort = (typeof HISTORY_SORTS)[number]
 export interface PayrollHistoryQuery {
   employeeId?: string
   departmentId?: string
+  designationId?: string
+  /** One payroll period (payroll details, payslip history by period). */
+  payrollPeriodId?: string
+  recordStatus?: PayrollRecordStatus
   month?: number
   year?: number
   status?: PayrollStatus

@@ -24,6 +24,8 @@ const LABELS: Record<string, string> = {
   history: 'History',
   payslips: 'Payslips',
   batches: 'Payment batches',
+  reports: 'Reports',
+  audit: 'Audit trail',
 }
 
 /** Labels for whole paths whose last segment is shared with another page (/payments/history vs /payroll/history). */

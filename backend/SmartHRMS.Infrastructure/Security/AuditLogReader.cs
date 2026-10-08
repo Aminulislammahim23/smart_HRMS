@@ -14,28 +14,44 @@ public sealed class AuditLogReader : IAuditLogReader
         _dbContext = dbContext;
     }
 
-    public async Task<List<AuditLogDto>> SearchAsync(string? entityType, Guid? entityId, string? action, int take, CancellationToken cancellationToken)
+    public async Task<List<AuditLogDto>> SearchAsync(AuditLogFilter filter, CancellationToken cancellationToken)
     {
         var query = _dbContext.AuditLogs.AsNoTracking();
 
-        if (entityType is not null)
+        if (filter.EntityTypes is not null)
         {
-            query = query.Where(a => a.EntityType == entityType);
+            var types = filter.EntityTypes.ToList();
+            query = query.Where(a => types.Contains(a.EntityType));
         }
 
-        if (entityId is not null)
+        if (filter.EntityId is not null)
         {
-            query = query.Where(a => a.EntityId == entityId);
+            query = query.Where(a => a.EntityId == filter.EntityId);
         }
 
-        if (action is not null)
+        if (filter.Action is not null)
         {
-            query = query.Where(a => a.Action == action);
+            query = query.Where(a => a.Action == filter.Action);
+        }
+
+        if (filter.Username is not null)
+        {
+            query = query.Where(a => a.Username != null && a.Username.Contains(filter.Username));
+        }
+
+        if (filter.FromUtc is not null)
+        {
+            query = query.Where(a => a.CreatedAt >= filter.FromUtc);
+        }
+
+        if (filter.ToUtc is not null)
+        {
+            query = query.Where(a => a.CreatedAt < filter.ToUtc);
         }
 
         return await query
             .OrderByDescending(a => a.CreatedAt)
-            .Take(take)
+            .Take(filter.Take)
             .Select(a => new AuditLogDto
             {
                 Id = a.Id,

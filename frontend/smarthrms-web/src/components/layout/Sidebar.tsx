@@ -1,5 +1,6 @@
 import {
   Banknote,
+  BarChart3,
   BriefcaseBusiness,
   Building2,
   CalendarCheck,
@@ -13,6 +14,7 @@ import {
   LayoutDashboard,
   LogOut,
   ReceiptText,
+  ScrollText,
   ShieldCheck,
   UserCircle,
   Users,
@@ -73,6 +75,7 @@ const NAV_SECTIONS: NavSection[] = [
       { label: 'Payslips', to: '/payroll/payslips', icon: FileStack, roles: HR, end: true },
       { label: 'Payment batches', to: '/payments/batches', icon: Banknote, roles: HR },
       { label: 'Payment history', to: '/payments/history', icon: HandCoins, roles: HR },
+      { label: 'Payroll reports', to: '/payroll/reports', icon: BarChart3, roles: HR },
       { label: 'Salary structures', to: '/payroll/salaries', icon: ReceiptText, roles: HR },
     ],
   },
@@ -83,7 +86,13 @@ const NAV_SECTIONS: NavSection[] = [
       { label: 'Designations', to: '/designations', icon: BriefcaseBusiness, roles: HR },
     ],
   },
-  { title: 'Administration', items: [{ label: 'Users & roles', to: '/users', icon: ShieldCheck, roles: ['Admin'] }] },
+  {
+    title: 'Administration',
+    items: [
+      { label: 'Users & roles', to: '/users', icon: ShieldCheck, roles: ['Admin'] },
+      { label: 'Payroll audit trail', to: '/payroll/audit', icon: ScrollText, roles: ['Admin'] },
+    ],
+  },
 ]
 
 function visible(item: NavItem, user: AuthUser | null): boolean {

@@ -104,7 +104,7 @@ public class PayrollService : IPayrollService
         };
 
         await _payrollRepository.AddPeriodAsync(period, cancellationToken);
-        _auditLogger.Add(AuditActions.PayrollPeriodCreated, nameof(PayrollPeriod), period.Id, $"{period.Name} ({start:yyyy-MM-dd}..{end:yyyy-MM-dd}).");
+        _auditLogger.Add(AuditActions.PayrollPeriodCreated, nameof(PayrollPeriod), period.Id, $"→ Draft: {period.Name} ({start:yyyy-MM-dd}..{end:yyyy-MM-dd}).");
         await _payrollRepository.SaveChangesAsync(cancellationToken);
 
         return await MapPeriodAsync(period, cancellationToken);
@@ -226,13 +226,14 @@ public class PayrollService : IPayrollService
             result.Removed++;
         }
 
+        var previousStatus = period.Status;
         period.Status = PayrollPeriodStatus.Calculated;
         period.CalculatedAt = DateTime.UtcNow;
         period.CalculatedByUserId = _currentUser.RequireUserId();
         period.UpdatedAt = DateTime.UtcNow;
 
         _auditLogger.Add(AuditActions.PayrollCalculated, nameof(PayrollPeriod), period.Id,
-            $"{result.Created} created, {result.Updated} updated, {result.Removed} removed, {result.Skipped.Count} skipped.");
+            $"{previousStatus} → Calculated: {result.Created} created, {result.Updated} updated, {result.Removed} removed, {result.Skipped.Count} skipped.");
 
         // One SaveChanges = one database transaction: all records and the status change, or nothing.
         await _payrollRepository.SaveChangesAsync(cancellationToken);
@@ -314,7 +315,7 @@ public class PayrollService : IPayrollService
         period.SubmittedByUserId = _currentUser.RequireUserId();
         period.UpdatedAt = DateTime.UtcNow;
 
-        _auditLogger.Add(AuditActions.PayrollSubmitted, nameof(PayrollPeriod), period.Id);
+        _auditLogger.Add(AuditActions.PayrollSubmitted, nameof(PayrollPeriod), period.Id, "Calculated → PendingApproval.");
         await _payrollRepository.SaveChangesAsync(cancellationToken);
 
         return await MapPeriodAsync(period, cancellationToken);
@@ -352,7 +353,7 @@ public class PayrollService : IPayrollService
             await _payrollRepository.AddPayslipAsync(payslip, cancellationToken);
         }
 
-        _auditLogger.Add(AuditActions.PayrollApproved, nameof(PayrollPeriod), period.Id);
+        _auditLogger.Add(AuditActions.PayrollApproved, nameof(PayrollPeriod), period.Id, "PendingApproval → Approved.");
         _auditLogger.Add(AuditActions.PayslipsGenerated, nameof(PayrollPeriod), period.Id, $"{payslips.Count} payslips issued.");
         await _payrollRepository.SaveChangesAsync(cancellationToken);
 
@@ -414,7 +415,7 @@ public class PayrollService : IPayrollService
         SetRecordStatus(period, PayrollRecordStatus.Finalized);
 
         // Validation, finalization, lock and audit are saved together (one transaction).
-        _auditLogger.Add(AuditActions.PayrollFinalized, nameof(PayrollPeriod), period.Id, $"{period.Records.Count} records."); // no salary amounts in the audit log
+        _auditLogger.Add(AuditActions.PayrollFinalized, nameof(PayrollPeriod), period.Id, $"Approved → Finalized: {period.Records.Count} records."); // no salary amounts in the audit log
         _auditLogger.Add(AuditActions.PayrollLocked, nameof(PayrollPeriod), period.Id, "Approved → Finalized; payroll values locked.");
         await _payrollRepository.SaveChangesAsync(cancellationToken);
 
@@ -427,6 +428,7 @@ public class PayrollService : IPayrollService
 
         var period = await GetPeriodEntityAsync(periodId, true, cancellationToken);
         EnsureStatus(period, "cancelled", PayrollPeriodStatus.Draft, PayrollPeriodStatus.Calculated, PayrollPeriodStatus.PendingApproval);
+        var cancelledFrom = period.Status;
 
         period.Status = PayrollPeriodStatus.Cancelled;
         period.CancelledAt = DateTime.UtcNow;
@@ -440,7 +442,7 @@ public class PayrollService : IPayrollService
 
         SetRecordStatus(period, PayrollRecordStatus.Cancelled);
 
-        _auditLogger.Add(AuditActions.PayrollCancelled, nameof(PayrollPeriod), period.Id, reason);
+        _auditLogger.Add(AuditActions.PayrollCancelled, nameof(PayrollPeriod), period.Id, reason is null ? $"{cancelledFrom} → Cancelled." : $"{cancelledFrom} → Cancelled: {reason}");
         await _payrollRepository.SaveChangesAsync(cancellationToken);
 
         return await MapPeriodAsync(period, cancellationToken);
@@ -720,6 +722,8 @@ public class PayrollService : IPayrollService
             OtherDeduction = record.OtherDeduction,
             TotalDeduction = record.TotalDeduction,
             NetSalary = record.NetSalary,
+            TotalAllowances = record.HouseRent + record.MedicalAllowance + record.TransportAllowance + record.OtherAllowance,
+            OtherDeductions = record.TotalDeduction - record.Tax,
             WorkingDays = record.WorkingDays,
             PresentDays = record.PresentDays,
             PaidLeaveDays = record.PaidLeaveDays,

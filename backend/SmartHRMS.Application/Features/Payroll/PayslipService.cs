@@ -1,4 +1,5 @@
 using smartHRMS.Application.Common.Exceptions;
+using smartHRMS.Application.Common.Export;
 using smartHRMS.Application.Common.Models;
 using smartHRMS.Application.Common.Security;
 using smartHRMS.Application.Common.Text;
@@ -42,6 +43,12 @@ public interface IPayslipService
 
     /// <summary>Issues the missing payslips of an Approved or Paid payroll (HR/Admin). Never for unapproved payroll.</summary>
     Task<PayslipGenerationResultDto> GenerateAsync(Guid periodId, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Payslip list as CSV or XLSX (Day 19): HR/Admin with the list filters, or (<paramref name="mine"/>) the signed-in
+    /// employee's own payslips only. Written to the audit log.
+    /// </summary>
+    Task<ExportFile> ExportAsync(PayrollHistoryQueryDto query, bool mine, string? format, CancellationToken cancellationToken);
 }
 
 /// <summary>
@@ -56,6 +63,9 @@ public class PayslipService : IPayslipService
 {
     private const int DefaultPageSize = 25;
     private const int MaxPageSize = 100;
+
+    /// <summary>Largest payslip export; narrower filters are needed beyond it.</summary>
+    private const int MaxExportRows = 10_000;
 
     private readonly IPayrollRepository _payrollRepository;
     private readonly IEmployeeRepository _employeeRepository;
@@ -152,6 +162,47 @@ public class PayslipService : IPayslipService
         return await BuildAsync(record!, cancellationToken);
     }
 
+    // ---- export ----
+
+    public async Task<ExportFile> ExportAsync(PayrollHistoryQueryDto query, bool mine, string? format, CancellationToken cancellationToken)
+    {
+        // The employee's own export takes the employee from the token; a sent employeeId is ignored.
+        Guid? employeeId;
+        if (mine)
+        {
+            employeeId = _currentUser.RequireEmployeeId();
+        }
+        else
+        {
+            _currentUser.EnsureHrOrAdmin();
+            employeeId = query.EmployeeId;
+        }
+
+        var exportFormat = TableExporter.ParseFormat(format);
+        var (filter, request) = BuildSearch(query, employeeId, onlyWithPayslip: true, onlyPaid: false);
+        var (records, total) = await _payrollRepository.SearchHistoryAsync(filter, request with { Page = 1, PageSize = MaxExportRows }, cancellationToken);
+        if (total > MaxExportRows)
+        {
+            throw new BadRequestException($"The export would contain {total} payslips; narrow the filters to at most {MaxExportRows}.");
+        }
+
+        var table = new ExportTable("Payslips",
+            new("Payslip"), new("Employee ID"), new("Employee"), new("Department"), new("Payroll period"),
+            new("Gross salary", ExportKind.Amount), new("Total deduction", ExportKind.Amount), new("Net salary", ExportKind.Amount),
+            new("Generated at", ExportKind.DateTime), new("Payment status"), new("Payment date", ExportKind.Date));
+        foreach (var r in records.Select(record => PayrollService.ToDto(record, isHrOrAdmin: !mine)))
+        {
+            table.Add(r.PayslipNumber, r.EmployeeCode, r.EmployeeName, r.DepartmentName, r.PeriodName, r.GrossSalary, r.TotalDeduction,
+                r.NetSalary, r.PayslipGeneratedAt, r.PaymentStatus, r.PaymentDate);
+        }
+
+        await _auditLogger.WriteAsync(AuditActions.PayslipsExported, nameof(Payslip), null,
+            $"{table.Rows.Count} payslips exported as {exportFormat.ToString().ToLowerInvariant()}{(mine ? " (own payslips)" : string.Empty)}.",
+            _currentUser.UserId, _currentUser.Username, cancellationToken);
+
+        return TableExporter.Write(table, exportFormat, $"payslips-{DateTime.UtcNow:yyyyMMdd-HHmm}");
+    }
+
     // ---- generation and payment ----
 
     public async Task<PayslipGenerationResultDto> GenerateAsync(Guid periodId, CancellationToken cancellationToken)
@@ -180,6 +231,21 @@ public class PayslipService : IPayslipService
     // ---- helpers ----
 
     private async Task<PagedResult<PayrollRecordDto>> SearchAsync(PayrollHistoryQueryDto query, Guid? employeeId, bool onlyWithPayslip, bool onlyPaid, CancellationToken cancellationToken)
+    {
+        var (filter, request) = BuildSearch(query, employeeId, onlyWithPayslip, onlyPaid);
+        var (items, total) = await _payrollRepository.SearchHistoryAsync(filter, request, cancellationToken);
+        var isHr = _currentUser.IsHrOrAdmin();
+
+        return new PagedResult<PayrollRecordDto>
+        {
+            Items = items.Select(record => PayrollService.ToDto(record, isHr)).ToList(),
+            Page = request.Page,
+            PageSize = request.PageSize,
+            TotalCount = total,
+        };
+    }
+
+    private (PayrollHistoryFilter Filter, PageRequest Request) BuildSearch(PayrollHistoryQueryDto query, Guid? employeeId, bool onlyWithPayslip, bool onlyPaid)
     {
         if (query.Month is < 1 or > 12)
         {
@@ -216,18 +282,12 @@ public class PayslipService : IPayslipService
             ParseEnum<PayrollPeriodStatus>(query.Status, "payroll status"),
             paymentStatus,
             InputText.Optional(query.Search),
-            onlyWithPayslip || paymentStatus is not null);
+            onlyWithPayslip || paymentStatus is not null,
+            query.PayrollPeriodId,
+            query.DesignationId,
+            ParseEnum<PayrollRecordStatus>(query.RecordStatus, "record status"));
 
-        var (items, total) = await _payrollRepository.SearchHistoryAsync(filter, new PageRequest(page, pageSize, sort, descending), cancellationToken);
-        var isHr = _currentUser.IsHrOrAdmin();
-
-        return new PagedResult<PayrollRecordDto>
-        {
-            Items = items.Select(record => PayrollService.ToDto(record, isHr)).ToList(),
-            Page = page,
-            PageSize = pageSize,
-            TotalCount = total,
-        };
+        return (filter, new PageRequest(page, pageSize, sort, descending));
     }
 
     private async Task<PayslipDto> BuildAsync(PayrollRecord record, CancellationToken cancellationToken)

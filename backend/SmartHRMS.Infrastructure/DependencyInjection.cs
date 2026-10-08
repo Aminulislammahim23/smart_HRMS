@@ -28,6 +28,7 @@ public static class DependencyInjection
         services.AddScoped<ILeaveRequestRepository, LeaveRequestRepository>();
         services.AddScoped<IPayrollRepository, PayrollRepository>();
         services.AddScoped<IPaymentRepository, PaymentRepository>();
+        services.AddScoped<IPayrollReportRepository, PayrollReportRepository>();
         services.AddScoped<IAuditLogger, AuditLogger>();
         services.AddScoped<IAuditLogReader, AuditLogReader>();
         services.AddSingleton<IPasswordHasher, Pbkdf2PasswordHasher>();

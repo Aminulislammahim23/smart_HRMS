@@ -158,6 +158,21 @@ public class PayrollRepository : IPayrollRepository
             query = query.Where(r => r.Employee!.DepartmentId == filter.DepartmentId);
         }
 
+        if (filter.DesignationId is not null)
+        {
+            query = query.Where(r => r.Employee!.DesignationId == filter.DesignationId);
+        }
+
+        if (filter.PayrollPeriodId is not null)
+        {
+            query = query.Where(r => r.PayrollPeriodId == filter.PayrollPeriodId);
+        }
+
+        if (filter.RecordStatus is not null)
+        {
+            query = query.Where(r => r.Status == filter.RecordStatus);
+        }
+
         if (filter.Year is not null)
         {
             query = query.Where(r => r.PayrollPeriod!.StartDate.Year == filter.Year);

@@ -1,9 +1,21 @@
 # SmartHRMS Web
 
-React + TypeScript frontend for the SmartHRMS API (Day 1–18): sign-in with roles, dashboard, employees (with photo),
+React + TypeScript frontend for the SmartHRMS API (Day 1–19): sign-in with roles, dashboard, employees (with photo),
 departments, designations, employee profiles, documents, attendance, leave (apply / approve), salary structures,
 payroll (periods, calculation, review, approval, finalization), printable payslips, payroll history and salary
-payments (payment batches, payment processing, payment history, the employee's own payments).
+payments (payment batches, payment processing, payment history, the employee's own payments), payroll reports with
+CSV/Excel export, and the payroll audit trail.
+
+Day 19 pages:
+- **Payroll periods** (`/payroll/periods`): payroll history by period, with totals, processed and finalized dates,
+  filters, server paging and export.
+- **Payroll details** (`/payroll/:id/records`): server-paged employee records with the full salary breakdown.
+- **Payslips** (`/payroll/payslips`): adds a payroll-period filter, the generated date, and export.
+- **Payroll reports** (`/payroll/reports`): summary, departments, employees, deductions, allowances and bonus.
+- **Payroll audit trail** (`/payroll/audit`, Admin).
+
+Exports are downloaded through the API with the sign-in token (`src/services/exportService.ts`). Every amount comes
+from the server.
 
 ## Sign-in and roles
 
@@ -14,10 +26,10 @@ every request again, so hiding a page is never the only protection.
 
 | Role | Sees |
 |---|---|
-| Employee | own dashboard, profile (read-only), attendance (check in/out), leave, payroll, payslips and own payments |
-| Manager | the same, plus leave approvals for direct reports |
-| HR | everything except users and payroll approval/finalization; payment batches and payment history read-only |
-| Admin | everything, including Users & roles, payroll approval and finalization, and payments (create batch, process, paid/failed/retry/cancel; never their own salary) |
+| Employee | own dashboard, profile (read-only), attendance (check in/out), leave, payroll, payslips (with export of their own list) and own payments |
+| Manager | the same, plus leave approvals for direct reports (no access to their reports' salaries) |
+| HR | everything except users, the payroll audit trail and payroll approval/finalization; payroll reports and exports; payment batches and payment history read-only |
+| Admin | everything, including Users & roles, the payroll audit trail, payroll approval and finalization, and payments (create batch, process, paid/failed/retry/cancel; never their own salary) |
 
 First sign-in: the backend creates the first Admin from `Auth:BootstrapAdmin` (see the backend documentation §17).
 That Admin then creates accounts on the *Users & roles* page.

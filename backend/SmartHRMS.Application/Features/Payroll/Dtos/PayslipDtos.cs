@@ -13,12 +13,21 @@ public class PayrollHistoryQueryDto
 
     public Guid? DepartmentId { get; set; }
 
+    /// <summary>Employee's current designation.</summary>
+    public Guid? DesignationId { get; set; }
+
+    /// <summary>One payroll period (Day 19: payroll details and payslip history by period).</summary>
+    public Guid? PayrollPeriodId { get; set; }
+
+    /// <summary>Record status: Calculated, NeedsReview, Approved, Finalized, Paid or Cancelled.</summary>
+    public string? RecordStatus { get; set; }
+
     /// <summary>Calendar month (1–12) of the payroll period's start date.</summary>
     public int? Month { get; set; }
 
     public int? Year { get; set; }
 
-    /// <summary>Payroll status: Draft, Calculated, PendingApproval, Approved, Paid or Cancelled.</summary>
+    /// <summary>Payroll status: Draft, Calculated, PendingApproval, Approved, Finalized, Paid or Cancelled.</summary>
     public string? Status { get; set; }
 
     /// <summary>Payslip payment status: Unpaid or Paid.</summary>

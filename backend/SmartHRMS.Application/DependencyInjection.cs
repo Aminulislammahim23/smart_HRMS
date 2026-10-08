@@ -15,6 +15,7 @@ using smartHRMS.Application.Features.Employees;
 using smartHRMS.Application.Features.Leaves;
 using smartHRMS.Application.Features.Payments;
 using smartHRMS.Application.Features.Payroll;
+using smartHRMS.Application.Features.PayrollReports;
 using smartHRMS.Application.Features.Users;
 
 namespace smartHRMS.Application;
@@ -70,6 +71,7 @@ public static class DependencyInjection
         services.AddScoped<IPayrollService, PayrollService>();
         services.AddScoped<IPayslipService, PayslipService>();
         services.AddScoped<IPaymentService, PaymentService>();
+        services.AddScoped<IPayrollReportService, PayrollReportService>();
         services.AddScoped<IAuditLogService, AuditLogService>();
 
         return services;

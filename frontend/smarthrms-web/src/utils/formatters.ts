@@ -123,3 +123,10 @@ export function shiftMonth(month: string, n: number): string {
   const [year, monthIndex] = month.split('-').map(Number)
   return toIsoDate(new Date(year, monthIndex - 1 + n, 1)).slice(0, 7)
 }
+
+/** The local calendar date of a UTC instant (e.g. "processed on"), unlike formatDate which reads date-only values. */
+export function formatInstantDate(value: string | null | undefined): string {
+  if (!value) return '—'
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? '—' : date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
+}

@@ -3,6 +3,7 @@ import { useCallback, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { EmptyState } from '../../components/common/EmptyState'
 import { ErrorState } from '../../components/common/ErrorState'
+import { ExportButtons } from '../../components/common/ExportButtons'
 import { Loading } from '../../components/common/Loading'
 import { PageHeader } from '../../components/common/PageHeader'
 import { Pagination } from '../../components/common/Pagination'
@@ -14,7 +15,7 @@ import { PaymentStatusBadge } from '../../components/payroll/PayrollStatusBadge'
 import { PayslipView } from '../../components/payroll/PayslipView'
 import { useApi } from '../../hooks/useApi'
 import { getMyPayments } from '../../services/paymentService'
-import { getMyCurrentPayslip, getMyPayslips } from '../../services/payrollService'
+import { exportMyPayslips, getMyCurrentPayslip, getMyPayslips } from '../../services/payrollService'
 import { ApiError } from '../../types/api'
 import type { Payment } from '../../types/payment'
 import type { PayrollRecord } from '../../types/payroll'
@@ -111,6 +112,9 @@ function MyPayslips() {
           <EmptyState icon={ReceiptText} title="No payslips yet" description="Payslips appear here once payroll is approved." />
         ) : (
           <>
+            <div className="flex justify-end">
+              <ExportButtons label="Export my payslips" onExport={exportMyPayslips} />
+            </div>
             <Table columns={columns} rows={data.items} rowKey={(r) => r.id} compact />
             <Pagination
               page={data.page}

@@ -10,7 +10,8 @@ namespace smartHRMS.Api.Controllers;
 /// <summary>
 /// Payroll: periods, calculation, review, approval, payment and payslips. Management endpoints are HR/Admin (approve
 /// and finalize: Admin; payment is made through /api/payments); employees reach only their own history and payslips. The service re-checks every rule.
-/// Workflow: Draft â†’ Calculated â†’ PendingApproval â†’ Approved â†’ Paid (or Cancelled before approval).
+/// Workflow: Draft → Calculated → PendingApproval → Approved → Finalized → Paid (or Cancelled before approval).
+/// Reports and report exports are in <see cref="PayrollReportsController"/>.
 /// </summary>
 [ApiController]
 [Route("api/payroll")]
@@ -247,6 +248,29 @@ public class PayrollController : ControllerBase
     {
         var page = await _payslipService.GetPayslipsAsync(query, cancellationToken);
         return Ok(ApiResponse<PagedResult<PayrollRecordDto>>.Ok(page, "Payslips retrieved successfully."));
+    }
+
+    /// <summary>Issued payslips as CSV or XLSX (HR/Admin), with the list filters. <c>format</c>: csv (default) or xlsx.</summary>
+    [Authorize(Policy = Policies.HrOrAdmin)]
+    [HttpGet("payslips/export")]
+    [Produces("text/csv", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/json")]
+    [ProducesResponseType(typeof(FileContentResult), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> ExportPayslips([FromQuery] PayrollHistoryQueryDto query, [FromQuery] string? format, CancellationToken cancellationToken)
+    {
+        var file = await _payslipService.ExportAsync(query, mine: false, format, cancellationToken);
+        return File(file.Content, file.ContentType, file.FileName);
+    }
+
+    /// <summary>The signed-in employee's own payslips as CSV or XLSX (employee from the token).</summary>
+    [HttpGet("me/payslips/export")]
+    [Produces("text/csv", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/json")]
+    [ProducesResponseType(typeof(FileContentResult), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> ExportMyPayslips([FromQuery] PayrollHistoryQueryDto query, [FromQuery] string? format, CancellationToken cancellationToken)
+    {
+        var file = await _payslipService.ExportAsync(query, mine: true, format, cancellationToken);
+        return File(file.Content, file.ContentType, file.FileName);
     }
 
     /// <summary>One payslip by its id: HR/Admin, or the employee it belongs to (404 for anyone else).</summary>

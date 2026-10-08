@@ -156,6 +156,12 @@ public class PayrollRecordDto
 
     public decimal NetSalary { get; set; }
 
+    /// <summary>House rent + medical + transport + other allowance (Day 19; from the stored record, not recalculated).</summary>
+    public decimal TotalAllowances { get; set; }
+
+    /// <summary>Every deduction except tax: total deduction − tax (Day 19).</summary>
+    public decimal OtherDeductions { get; set; }
+
     public decimal WorkingDays { get; set; }
 
     public decimal PresentDays { get; set; }

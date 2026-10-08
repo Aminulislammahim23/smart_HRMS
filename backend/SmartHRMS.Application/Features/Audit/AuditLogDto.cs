@@ -28,6 +28,17 @@ public class AuditLogQueryDto
 
     public string? Action { get; set; }
 
+    /// <summary>Day 19: "payroll" limits the log to payroll entities (periods, records, payslips, salary structures, payments, reports).</summary>
+    public string? Category { get; set; }
+
+    /// <summary>User name contains.</summary>
+    public string? Username { get; set; }
+
+    /// <summary>Office dates (Asia/Dhaka) the entries were written on, inclusive.</summary>
+    public DateOnly? From { get; set; }
+
+    public DateOnly? To { get; set; }
+
     /// <summary>Newest entries first; 1–500, default 100.</summary>
     public int? Take { get; set; }
 }

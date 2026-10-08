@@ -119,6 +119,9 @@ public class FakePayrollRepository : IPayrollRepository
         var query = Records.AsEnumerable();
         if (filter.EmployeeId is not null) query = query.Where(r => r.EmployeeId == filter.EmployeeId);
         if (filter.DepartmentId is not null) query = query.Where(r => _employees.Employees.Any(e => e.Id == r.EmployeeId && e.DepartmentId == filter.DepartmentId));
+        if (filter.DesignationId is not null) query = query.Where(r => _employees.Employees.Any(e => e.Id == r.EmployeeId && e.DesignationId == filter.DesignationId));
+        if (filter.PayrollPeriodId is not null) query = query.Where(r => r.PayrollPeriodId == filter.PayrollPeriodId);
+        if (filter.RecordStatus is not null) query = query.Where(r => r.Status == filter.RecordStatus);
         if (filter.Year is not null) query = query.Where(r => r.PayrollPeriod!.StartDate.Year == filter.Year);
         if (filter.Month is not null) query = query.Where(r => r.PayrollPeriod!.StartDate.Month == filter.Month);
         if (filter.PeriodStatus is not null) query = query.Where(r => r.PayrollPeriod!.Status == filter.PeriodStatus);
