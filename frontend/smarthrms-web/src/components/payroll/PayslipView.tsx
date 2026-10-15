@@ -35,7 +35,7 @@ export function PayslipView({ payslip }: { payslip: Payslip }) {
 
         {!payslip.isFinal && (
           <div role="note" className="alert alert-warning alert-soft print:border print:border-base-300">
-            <span className="text-sm font-medium">Preview — this payroll is {enumLabel(payslip.payrollStatus).toLowerCase()} and not yet approved. The payslip is issued at approval.</span>
+            <span className="text-sm font-medium">Preview — this payroll is {enumLabel(payslip.payrollStatus).toLowerCase()} and not yet finalized. The payslip is issued when the payroll is finalized; employees can't see it before.</span>
           </div>
         )}
 
@@ -47,6 +47,8 @@ export function PayslipView({ payslip }: { payslip: Payslip }) {
             ['Employee ID', payslip.employeeCode],
             ['Department', payslip.departmentName ?? '—'],
             ['Designation', payslip.designationName ?? '—'],
+            ['Joining date', formatDate(payslip.joiningDate)],
+            ['Payroll status', enumLabel(payslip.payrollStatus)],
             ['Pay period', `${formatDate(payslip.periodStartDate)} – ${formatDate(payslip.periodEndDate)}`],
             ['Payment date', payslip.paymentDate ? formatDate(payslip.paymentDate) : 'Not paid yet'],
             ...(payslip.paymentMethod ? [['Payment method', enumLabel(payslip.paymentMethod)]] : []),

@@ -179,6 +179,8 @@ export interface Payslip {
   employeeName: string
   /** Relative URL of the employee's current photo, or null. */
   employeePhotoUrl: string | null
+  /** "yyyy-MM-dd"; null when the employee record no longer exists. */
+  joiningDate: string | null
   departmentName: string | null
   designationName: string | null
   periodName: string
@@ -287,4 +289,24 @@ export function isPayrollStatus(value: string): value is PayrollStatus {
 
 export function isPayrollRecordStatus(value: string): value is PayrollRecordStatus {
   return PAYROLL_RECORD_STATUSES.some((status) => status === value)
+}
+
+/** The signed-in employee's own payroll summary (finalized and paid payroll only). */
+export interface MyPayrollSummary {
+  year: number
+  payslipCount: number
+  grossSalary: number
+  totalDeduction: number
+  netSalary: number
+  paidNetSalary: number
+  latest: {
+    payslipId: string
+    payslipNumber: string
+    periodName: string
+    grossSalary: number
+    totalDeduction: number
+    netSalary: number
+    paymentStatus: PaymentStatus
+    paymentDate: string | null
+  } | null
 }

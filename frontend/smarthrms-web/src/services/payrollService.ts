@@ -1,5 +1,6 @@
 import type { ApiResponse } from '../types/api'
 import type {
+  MyPayrollSummary,
   PagedResult,
   PayrollCalculationResult,
   PayrollPeriod,
@@ -16,7 +17,7 @@ import type {
 } from '../types/payroll'
 import type { ExportFormat } from '../types/payrollReport'
 import { api, unwrap, unwrapMessage } from './api'
-import { downloadExport } from './exportService'
+import { downloadExport, downloadFile } from './exportService'
 
 function params(query: object) {
   return Object.fromEntries(Object.entries(query).filter(([, value]) => value !== undefined && value !== ''))
@@ -150,4 +151,21 @@ export function exportPayslips(query: PayrollHistoryQuery, format: ExportFormat)
 /** The signed-in employee's own payslips as CSV or Excel (employee from the token). */
 export function exportMyPayslips(format: ExportFormat): Promise<void> {
   return downloadExport('/payroll/me/payslips/export', { format }, 'my-payslips', format)
+}
+
+// ---- employee payroll portal (Day 20) ----
+
+/** The signed-in employee's payroll summary for a year (finalized and paid payroll only). */
+export function getMyPayrollSummary(year: number | undefined, signal?: AbortSignal): Promise<MyPayrollSummary> {
+  return unwrap(api.get<ApiResponse<MyPayrollSummary>>('/payroll/me/summary', { params: params({ year }), signal }))
+}
+
+/** Downloads a payslip as PDF (owner of finalized payroll, or HR/Admin); the server writes it to the audit log. */
+export function downloadPayslipPdf(payslipId: string, payslipNumber: string | null): Promise<void> {
+  return downloadFile(`/payroll/payslips/${payslipId}/pdf`, {}, `${payslipNumber ?? 'payslip'}.pdf`)
+}
+
+/** Records a print of the payslip in the audit log (same access rule as viewing it). */
+export function recordPayslipPrint(payslipId: string): Promise<string> {
+  return unwrapMessage(api.post<ApiResponse<unknown>>(`/payroll/payslips/${payslipId}/print`))
 }

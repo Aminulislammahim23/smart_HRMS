@@ -4,6 +4,9 @@ using smartHRMS.Api.Auth;
 using smartHRMS.Application.Common.Models;
 using smartHRMS.Application.Features.Payroll;
 using smartHRMS.Application.Features.Payroll.Dtos;
+using smartHRMS.Application.Features.PayrollReports;
+using smartHRMS.Application.Features.PayrollReports.Dtos;
+using smartHRMS.Application.Features.Attendances;
 
 namespace smartHRMS.Api.Controllers;
 
@@ -24,9 +27,13 @@ public class PayrollController : ControllerBase
     private readonly IPayrollService _payrollService;
     private readonly ISalaryStructureService _salaryService;
     private readonly IPayslipService _payslipService;
+    private readonly IPayrollReportService _reportService;
+    private readonly AttendanceClock _clock;
 
-    public PayrollController(IPayrollService payrollService, ISalaryStructureService salaryService, IPayslipService payslipService)
+    public PayrollController(IPayrollService payrollService, ISalaryStructureService salaryService, IPayslipService payslipService, IPayrollReportService reportService, AttendanceClock clock)
     {
+        _reportService = reportService;
+        _clock = clock;
         _payrollService = payrollService;
         _salaryService = salaryService;
         _payslipService = payslipService;
@@ -273,6 +280,30 @@ public class PayrollController : ControllerBase
         return File(file.Content, file.ContentType, file.FileName);
     }
 
+    /// <summary>
+    /// The payslip as a PDF (Day 20): HR/Admin any payslip; an employee only their own, of finalized or paid payroll
+    /// (404 otherwise). Every download is written to the audit log.
+    /// </summary>
+    [HttpGet("payslips/{id:guid}/pdf")]
+    [Produces("application/pdf", "application/json")]
+    [ProducesResponseType(typeof(FileContentResult), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetPayslipPdf(Guid id, CancellationToken cancellationToken)
+    {
+        var file = await _payslipService.GetPdfAsync(id, cancellationToken);
+        return File(file.Content, file.ContentType, file.FileName);
+    }
+
+    /// <summary>Records that a payslip was printed (Day 20); same access rule as viewing it.</summary>
+    [HttpPost("payslips/{id:guid}/print")]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<ApiResponse<object>>> RecordPayslipPrint(Guid id, CancellationToken cancellationToken)
+    {
+        await _payslipService.RecordPrintAsync(id, cancellationToken);
+        return Ok(ApiResponse<object>.Ok("Payslip print recorded."));
+    }
+
     /// <summary>One payslip by its id: HR/Admin, or the employee it belongs to (404 for anyone else).</summary>
     [HttpGet("payslips/{id:guid}")]
     [ProducesResponseType(typeof(ApiResponse<PayslipDto>), StatusCodes.Status200OK)]
@@ -315,6 +346,19 @@ public class PayrollController : ControllerBase
     {
         var page = await _payslipService.GetMyPayslipsAsync(query, cancellationToken);
         return Ok(ApiResponse<PagedResult<PayrollRecordDto>>.Ok(page, "Payslips retrieved successfully."));
+    }
+
+    /// <summary>
+    /// The signed-in employee's payroll summary for a year (default: this year): payslips, gross, deduction, net and paid,
+    /// plus the latest payslip. Finalized and paid payroll only; the employee comes from the token (Day 20).
+    /// </summary>
+    [HttpGet("me/summary")]
+    [ProducesResponseType(typeof(ApiResponse<MyPayrollSummaryDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<ApiResponse<MyPayrollSummaryDto>>> GetMySummary([FromQuery] int? year, CancellationToken cancellationToken)
+    {
+        var summary = await _reportService.GetMySummaryAsync(year, _clock.Today.Year, cancellationToken);
+        return Ok(ApiResponse<MyPayrollSummaryDto>.Ok(summary, "Payroll summary retrieved successfully."));
     }
 
     /// <summary>The signed-in employee's latest payslip (404 while none has been issued).</summary>

@@ -9,6 +9,7 @@ import { PageHeader } from '../../components/common/PageHeader'
 import { Pagination } from '../../components/common/Pagination'
 import { Table, type Column } from '../../components/common/Table'
 import { PayrollRecordModal } from '../../components/payroll/PayrollRecordModal'
+import { PayslipPdfButton } from '../../components/payroll/PayslipPdfButton'
 import { PaymentStatusBadge, PayrollStatusBadge } from '../../components/payroll/PayrollStatusBadge'
 import { useApi } from '../../hooks/useApi'
 import { getDepartments } from '../../services/departmentService'
@@ -151,6 +152,7 @@ export default function PayrollHistoryPage({ mode = 'history' }: { mode?: 'histo
               <Link to={`/payroll/payslips/${r.payslipId}`} className="btn btn-ghost btn-xs btn-square" title="Payslip" aria-label={`Payslip of ${r.employeeName}, ${r.periodName}`}>
                 <ReceiptText className="size-4" />
               </Link>
+              <PayslipPdfButton compact payslipId={r.payslipId} payslipNumber={r.payslipNumber} label={`Download payslip of ${r.employeeName}, ${r.periodName} as PDF`} />
               <Link to={`/payroll/payslips/${r.payslipId}?print=1`} className="btn btn-ghost btn-xs btn-square" title="Print" aria-label={`Print payslip of ${r.employeeName}, ${r.periodName}`}>
                 <Printer className="size-4" />
               </Link>

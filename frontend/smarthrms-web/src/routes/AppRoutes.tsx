@@ -38,6 +38,7 @@ const PayslipPage = lazy(() => import('../pages/payroll/PayslipPage'))
 const MyPayrollPage = lazy(() => import('../pages/payroll/MyPayrollPage'))
 const SalaryStructuresPage = lazy(() => import('../pages/payroll/SalaryStructuresPage'))
 const PayrollHistoryPage = lazy(() => import('../pages/payroll/PayrollHistoryPage'))
+const DisbursementDashboardPage = lazy(() => import('../pages/payments/DisbursementDashboardPage'))
 const PaymentBatchesPage = lazy(() => import('../pages/payments/PaymentBatchesPage'))
 const PaymentBatchDetailsPage = lazy(() => import('../pages/payments/PaymentBatchDetailsPage'))
 const PaymentHistoryPage = lazy(() => import('../pages/payments/PaymentHistoryPage'))
@@ -119,6 +120,7 @@ export function AppRoutes() {
             <Route path="/payroll/:id/records" element={<PayrollRecordsPage />} />
             <Route path="/payroll/:id/approval" element={<PayrollApprovalPage />} />
 
+            <Route path="/payments" element={<DisbursementDashboardPage />} />
             <Route path="/payments/batches" element={<PaymentBatchesPage />} />
             <Route path="/payments/batches/:id" element={<PaymentBatchDetailsPage />} />
             <Route path="/payments/history" element={<PaymentHistoryPage />} />

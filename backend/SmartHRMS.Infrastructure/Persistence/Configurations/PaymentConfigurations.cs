@@ -136,6 +136,7 @@ public class PaymentStatusHistoryConfiguration : IEntityTypeConfiguration<Paymen
         builder.Property(h => h.PreviousStatus).HasConversion<string>().HasMaxLength(20);
         builder.Property(h => h.NewStatus).IsRequired().HasConversion<string>().HasMaxLength(20);
         builder.Property(h => h.Reason).HasMaxLength(500);
+        builder.Property(h => h.Reference).HasMaxLength(100);
 
         builder.HasIndex(h => new { h.PaymentTransactionId, h.CreatedAt });
 

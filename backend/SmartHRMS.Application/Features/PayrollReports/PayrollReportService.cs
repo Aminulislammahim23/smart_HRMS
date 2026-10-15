@@ -42,6 +42,12 @@ public interface IPayrollReportService
 
     /// <summary>A report as CSV or XLSX (HR/Admin); the export is written to the audit log.</summary>
     Task<ExportFile> ExportAsync(PayrollReportKind kind, PayrollReportQueryDto query, string? format, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// The signed-in employee's own payroll summary for a year (default: the current office year), any role. The
+    /// employee comes from the token, and only finalized or paid payroll counts (Day 20).
+    /// </summary>
+    Task<MyPayrollSummaryDto> GetMySummaryAsync(int? year, int currentYear, CancellationToken cancellationToken);
 }
 
 /// <summary>
@@ -142,6 +148,43 @@ public class PayrollReportService : IPayrollReportService
             _currentUser.UserId, _currentUser.Username, cancellationToken);
 
         return TableExporter.Write(table, exportFormat, name);
+    }
+
+    public async Task<MyPayrollSummaryDto> GetMySummaryAsync(int? year, int currentYear, CancellationToken cancellationToken)
+    {
+        var employeeId = _currentUser.RequireEmployeeId();
+        ValidateCalendar(null, year, null, null);
+        var forYear = year ?? currentYear;
+
+        var visible = PayslipIssuer.EmployeeVisibleStatuses;
+        var yearFilter = new PayrollReportFilter(forYear, null, null, employeeId, null, null, visible, null, null, null);
+        var totals = Combine((await _repository.SumByPeriodAsync(yearFilter, cancellationToken)).Select(Amounts), 1);
+        var anyYear = yearFilter with { Year = null };
+        var (latestRecords, _) = await _repository.SearchRecordsAsync(anyYear, 1, 1, cancellationToken);
+        var latest = latestRecords.FirstOrDefault(r => r.Payslip is not null);
+
+        return new MyPayrollSummaryDto
+        {
+            Year = forYear,
+            PayslipCount = totals.RecordCount,
+            GrossSalary = totals.GrossSalary,
+            TotalDeduction = totals.TotalDeduction,
+            NetSalary = totals.NetSalary,
+            PaidNetSalary = totals.PaidNetSalary,
+            Latest = latest is null
+                ? null
+                : new MyLatestPayslipDto
+                {
+                    PayslipId = latest.Payslip!.Id,
+                    PayslipNumber = latest.Payslip.PayslipNumber,
+                    PeriodName = latest.PayrollPeriod?.Name ?? string.Empty,
+                    GrossSalary = latest.GrossSalary,
+                    TotalDeduction = latest.TotalDeduction,
+                    NetSalary = latest.NetSalary,
+                    PaymentStatus = latest.Payslip.PaymentStatus.ToString(),
+                    PaymentDate = latest.Payslip.PaymentDate,
+                },
+        };
     }
 
     // ---- building ----

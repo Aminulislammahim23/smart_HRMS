@@ -106,7 +106,7 @@ export default function PayrollPeriodDetailsPage() {
 
         {period.status === 'Approved' && (
           <div role="note" className="alert alert-info alert-soft">
-            <span className="text-sm">Payslips have been issued. An Admin finalizes this payroll to lock it; salaries are then paid through a payment batch.</span>
+            <span className="text-sm">Approved. An Admin finalizes this payroll to lock it; payslips are issued to employees at finalization and salaries are then paid through a payment batch.</span>
           </div>
         )}
         {period.isLocked && (

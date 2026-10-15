@@ -26,7 +26,8 @@ public sealed record PayrollHistoryFilter(
     bool OnlyWithPayslip,
     Guid? PayrollPeriodId = null,
     Guid? DesignationId = null,
-    PayrollRecordStatus? RecordStatus = null);
+    PayrollRecordStatus? RecordStatus = null,
+    IReadOnlyCollection<PayrollPeriodStatus>? PeriodStatuses = null);
 
 public enum PayrollHistorySort
 {

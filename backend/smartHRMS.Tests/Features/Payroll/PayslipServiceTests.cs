@@ -78,6 +78,14 @@ public class PayslipServiceTests
             return id;
         }
 
+        /// <summary>Approved and finalized (Day 20: payslips are issued at finalization).</summary>
+        public async Task<Guid> FinalizedOctoberAsync()
+        {
+            var id = await ApprovedOctoberAsync();
+            await Payrolls.FinalizeAsync(id, CancellationToken.None);
+            return id;
+        }
+
         public Payslip PayslipOf(Employee employee) => Payroll.Payslips.Single(p => p.EmployeeId == employee.Id);
     }
 
@@ -94,10 +102,13 @@ public class PayslipServiceTests
     }
 
     [Fact]
-    public async Task Approval_IssuesOneUnpaidPayslipPerRecord_InTheSameSave()
+    public async Task Approval_IssuesNoPayslip_FinalizationIssuesOneUnpaidPayslipPerRecord()
     {
         var s = new Setup();
-        await s.ApprovedOctoberAsync();
+        var id = await s.ApprovedOctoberAsync();
+        Assert.Empty(s.Payroll.Payslips);
+        await Assert.ThrowsAsync<ConflictException>(() => s.Payslips.GenerateAsync(id, CancellationToken.None)); // approved is not final yet
+        await s.Payrolls.FinalizeAsync(id, CancellationToken.None);
 
         Assert.Equal(2, s.Payroll.Payslips.Count());
         var payslip = s.PayslipOf(s.Alice);
@@ -108,10 +119,10 @@ public class PayslipServiceTests
     }
 
     [Fact]
-    public async Task Generate_IsIdempotent_ForApprovedPayroll()
+    public async Task Generate_IsIdempotent_ForFinalizedPayroll()
     {
         var s = new Setup();
-        var id = await s.ApprovedOctoberAsync();
+        var id = await s.FinalizedOctoberAsync();
 
         var result = await s.Payslips.GenerateAsync(id, CancellationToken.None);
 
@@ -124,7 +135,7 @@ public class PayslipServiceTests
     public async Task Payslip_UsesTheLockedRecordAmounts_IncludingProvidentFund()
     {
         var s = new Setup();
-        await s.ApprovedOctoberAsync();
+        await s.FinalizedOctoberAsync();
         s.User.SignInAs(UserRole.Employee, s.Alice.Id);
 
         var payslip = await s.Payslips.GetByIdAsync(s.PayslipOf(s.Alice).Id, CancellationToken.None);
@@ -135,9 +146,10 @@ public class PayslipServiceTests
         Assert.Equal(28400m, payslip.NetSalary);
         Assert.Contains(payslip.Deductions, l => l.Label == "Provident fund" && l.Amount == 2100m);
         Assert.Equal(payslip.TotalDeduction, payslip.Deductions.Sum(l => l.Amount));
-        Assert.Equal("Approved", payslip.PayrollStatus);
+        Assert.Equal("Finalized", payslip.PayrollStatus);
         Assert.Equal("Unpaid", payslip.PaymentStatus);
         Assert.True(payslip.IsFinal);
+        Assert.Equal(new DateOnly(2020, 1, 1), payslip.JoiningDate);
         Assert.Equal("/uploads/employees/EMP-001.jpg", payslip.EmployeePhotoUrl);
         Assert.Equal("PS-20261001-EMP-001", payslip.PayslipNumber);
     }
@@ -148,7 +160,7 @@ public class PayslipServiceTests
     public async Task Employee_SeesOwnPayslip_NotAnotherEmployees()
     {
         var s = new Setup();
-        await s.ApprovedOctoberAsync();
+        await s.FinalizedOctoberAsync();
         s.User.SignInAs(UserRole.Employee, s.Alice.Id);
 
         Assert.Equal("EMP-001", (await s.Payslips.GetByIdAsync(s.PayslipOf(s.Alice).Id, CancellationToken.None)).EmployeeCode);
@@ -163,7 +175,7 @@ public class PayslipServiceTests
     public async Task MyEndpoints_UseTheTokenEmployee_IgnoringAnyEmployeeIdSent()
     {
         var s = new Setup();
-        await s.ApprovedOctoberAsync();
+        await s.FinalizedOctoberAsync();
         s.User.SignInAs(UserRole.Employee, s.Alice.Id);
 
         var mine = await s.Payslips.GetMyPayslipsAsync(new PayrollHistoryQueryDto { EmployeeId = s.Bob.Id }, CancellationToken.None);
@@ -176,7 +188,7 @@ public class PayslipServiceTests
     public async Task MyPayments_ListOnlyPaidPayslips()
     {
         var s = new Setup();
-        await s.ApprovedOctoberAsync();
+        await s.FinalizedOctoberAsync();
         s.User.SignInAs(UserRole.Employee, s.Alice.Id);
         Assert.Empty((await s.Payslips.GetMyPaymentsAsync(new PayrollHistoryQueryDto(), CancellationToken.None)).Items);
 
@@ -210,7 +222,7 @@ public class PayslipServiceTests
     {
         var s = new Setup();
         s.Bob.ManagerId = s.Alice.Id;
-        await s.ApprovedOctoberAsync();
+        await s.FinalizedOctoberAsync();
         s.User.SignInAs(UserRole.Manager, s.Alice.Id);
 
         await Assert.ThrowsAsync<NotFoundException>(() => s.Payslips.GetByIdAsync(s.PayslipOf(s.Bob).Id, CancellationToken.None));
@@ -223,7 +235,7 @@ public class PayslipServiceTests
     public async Task History_FiltersAndPages()
     {
         var s = new Setup();
-        await s.ApprovedOctoberAsync();
+        await s.FinalizedOctoberAsync();
         s.User.SignInAs(UserRole.HR);
 
         var all = await s.Payslips.GetHistoryAsync(new PayrollHistoryQueryDto { PageSize = 1 }, CancellationToken.None);
@@ -231,7 +243,7 @@ public class PayslipServiceTests
         Assert.Single(all.Items);
         Assert.Equal(2, all.TotalPages);
 
-        Assert.Equal(2, (await s.Payslips.GetHistoryAsync(new PayrollHistoryQueryDto { Year = 2026, Month = 10, Status = "Approved" }, CancellationToken.None)).TotalCount);
+        Assert.Equal(2, (await s.Payslips.GetHistoryAsync(new PayrollHistoryQueryDto { Year = 2026, Month = 10, Status = "Finalized" }, CancellationToken.None)).TotalCount);
         Assert.Equal(0, (await s.Payslips.GetHistoryAsync(new PayrollHistoryQueryDto { Month = 9 }, CancellationToken.None)).TotalCount);
         Assert.Equal(0, (await s.Payslips.GetHistoryAsync(new PayrollHistoryQueryDto { PaymentStatus = "Paid" }, CancellationToken.None)).TotalCount);
         Assert.Equal("EMP-002", Assert.Single((await s.Payslips.GetHistoryAsync(new PayrollHistoryQueryDto { Search = "bob" }, CancellationToken.None)).Items).EmployeeCode);

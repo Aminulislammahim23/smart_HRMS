@@ -41,7 +41,7 @@ public interface IPayslipService
     /// </summary>
     Task<PayslipDto> GetByRecordAsync(Guid recordId, CancellationToken cancellationToken);
 
-    /// <summary>Issues the missing payslips of an Approved or Paid payroll (HR/Admin). Never for unapproved payroll.</summary>
+    /// <summary>Issues the missing payslips of a Finalized or Paid payroll (HR/Admin). Never for payroll that isn't finalized.</summary>
     Task<PayslipGenerationResultDto> GenerateAsync(Guid periodId, CancellationToken cancellationToken);
 
     /// <summary>
@@ -49,15 +49,21 @@ public interface IPayslipService
     /// employee's own payslips only. Written to the audit log.
     /// </summary>
     Task<ExportFile> ExportAsync(PayrollHistoryQueryDto query, bool mine, string? format, CancellationToken cancellationToken);
+
+    /// <summary>The payslip as a PDF document (Day 20), with the same access rule as viewing it. Audited as a download.</summary>
+    Task<ExportFile> GetPdfAsync(Guid payslipId, CancellationToken cancellationToken);
+
+    /// <summary>Records that a payslip was printed (Day 20), with the same access rule as viewing it.</summary>
+    Task RecordPrintAsync(Guid payslipId, CancellationToken cancellationToken);
 }
 
 /// <summary>
-/// Payslips are the approved payroll snapshot: issued at approval (or by <see cref="GenerateAsync"/> for older approved
-/// payroll), never for Draft, Calculated, PendingApproval or Cancelled payroll. Amounts come from the locked payroll
+/// Payslips are the final payroll snapshot: issued at finalization (or by <see cref="GenerateAsync"/> for older finalized
+/// payroll), never for Draft, Calculated, PendingApproval, Approved or Cancelled payroll (Day 20). Amounts come from the locked payroll
 /// record; nothing is recalculated here. Payment is made through payment batches (Day 18) and mirrored here.
 ///
-/// Access: HR/Admin see everything. Employees reach only their own payslips, and the "my" endpoints take the
-/// employee from the token, never from the request. Managers have no access to their reports' payslips.
+/// Access: HR/Admin see everything. Employees reach only their own payslips of finalized or paid payroll, and the "my"
+/// endpoints take the employee from the token, never from the request. Managers have no access to their reports' payslips.
 /// </summary>
 public class PayslipService : IPayslipService
 {
@@ -98,31 +104,31 @@ public class PayslipService : IPayslipService
     public Task<PagedResult<PayrollRecordDto>> GetHistoryAsync(PayrollHistoryQueryDto query, CancellationToken cancellationToken)
     {
         _currentUser.EnsureHrOrAdmin();
-        return SearchAsync(query, query.EmployeeId, onlyWithPayslip: false, onlyPaid: false, cancellationToken);
+        return SearchAsync(query, query.EmployeeId, onlyWithPayslip: false, onlyPaid: false, employeeView: false, cancellationToken);
     }
 
     public Task<PagedResult<PayrollRecordDto>> GetPayslipsAsync(PayrollHistoryQueryDto query, CancellationToken cancellationToken)
     {
         _currentUser.EnsureHrOrAdmin();
-        return SearchAsync(query, query.EmployeeId, onlyWithPayslip: true, onlyPaid: false, cancellationToken);
+        return SearchAsync(query, query.EmployeeId, onlyWithPayslip: true, onlyPaid: false, employeeView: false, cancellationToken);
     }
 
     public async Task<PagedResult<PayrollRecordDto>> GetEmployeePayslipsAsync(Guid employeeId, PayrollHistoryQueryDto query, CancellationToken cancellationToken)
     {
         _currentUser.EnsureSelfOrHrOrAdmin(employeeId);
         await _employeeRepository.EnsureExistsAsync(employeeId, cancellationToken);
-        return await SearchAsync(query, employeeId, onlyWithPayslip: true, onlyPaid: false, cancellationToken);
+        return await SearchAsync(query, employeeId, onlyWithPayslip: true, onlyPaid: false, employeeView: !_currentUser.IsHrOrAdmin(), cancellationToken);
     }
 
     public Task<PagedResult<PayrollRecordDto>> GetMyPayslipsAsync(PayrollHistoryQueryDto query, CancellationToken cancellationToken)
     {
-        return SearchAsync(query, _currentUser.RequireEmployeeId(), onlyWithPayslip: true, onlyPaid: false, cancellationToken);
+        return SearchAsync(query, _currentUser.RequireEmployeeId(), onlyWithPayslip: true, onlyPaid: false, employeeView: true, cancellationToken);
     }
 
     public Task<PagedResult<PayrollRecordDto>> GetMyPaymentsAsync(PayrollHistoryQueryDto query, CancellationToken cancellationToken)
     {
         query.SortBy ??= nameof(PayrollHistorySort.PaymentDate);
-        return SearchAsync(query, _currentUser.RequireEmployeeId(), onlyWithPayslip: true, onlyPaid: true, cancellationToken);
+        return SearchAsync(query, _currentUser.RequireEmployeeId(), onlyWithPayslip: true, onlyPaid: true, employeeView: true, cancellationToken);
     }
 
     // ---- single payslips ----
@@ -130,7 +136,7 @@ public class PayslipService : IPayslipService
     public async Task<PayslipDto> GetMyCurrentPayslipAsync(CancellationToken cancellationToken)
     {
         var employeeId = _currentUser.RequireEmployeeId();
-        var filter = new PayrollHistoryFilter(employeeId, null, null, null, null, null, null, OnlyWithPayslip: true);
+        var filter = new PayrollHistoryFilter(employeeId, null, null, null, null, null, null, OnlyWithPayslip: true, PeriodStatuses: PayslipIssuer.EmployeeVisibleStatuses);
         var (items, _) = await _payrollRepository.SearchHistoryAsync(filter, new PageRequest(1, 1, PayrollHistorySort.Period, Descending: true), cancellationToken);
         var latest = items.FirstOrDefault()?.Payslip
             ?? throw new NotFoundException("No payslip has been issued to you yet.");
@@ -140,27 +146,52 @@ public class PayslipService : IPayslipService
 
     public async Task<PayslipDto> GetByIdAsync(Guid payslipId, CancellationToken cancellationToken)
     {
-        var payslip = await _payrollRepository.GetPayslipAsync(payslipId, cancellationToken);
-        if (payslip is null || (!_currentUser.IsHrOrAdmin() && !_currentUser.IsSelf(payslip.EmployeeId)))
-        {
-            // Not 403: another employee's payslip id must reveal nothing.
-            throw new NotFoundException($"Payslip with id '{payslipId}' was not found.");
-        }
-
-        return await BuildAsync(payslip.PayrollRecord!, cancellationToken);
+        var payslip = await GetVisiblePayslipAsync(payslipId, cancellationToken);
+        return await BuildAsync(payslip.PayrollRecord!, AuditActions.PayslipViewed, cancellationToken);
     }
 
     public async Task<PayslipDto> GetByRecordAsync(Guid recordId, CancellationToken cancellationToken)
     {
         var record = await _payrollRepository.GetRecordAsync(recordId, cancellationToken);
-        var visible = record is not null && (_currentUser.IsHrOrAdmin() || (_currentUser.IsSelf(record.EmployeeId) && record.Payslip is not null));
+        var visible = record is not null
+            && (_currentUser.IsHrOrAdmin() || (_currentUser.IsSelf(record.EmployeeId) && record.Payslip is not null && IsEmployeeVisible(record.PayrollPeriod!)));
         if (!visible)
         {
             throw new NotFoundException($"Payroll record with id '{recordId}' was not found.");
         }
 
-        return await BuildAsync(record!, cancellationToken);
+        return await BuildAsync(record!, AuditActions.PayslipViewed, cancellationToken);
     }
+
+    public async Task<ExportFile> GetPdfAsync(Guid payslipId, CancellationToken cancellationToken)
+    {
+        var payslip = await GetVisiblePayslipAsync(payslipId, cancellationToken);
+        var dto = await BuildAsync(payslip.PayrollRecord!, AuditActions.PayslipDownloaded, cancellationToken);
+        return new ExportFile($"{payslip.PayslipNumber}.pdf", "application/pdf", PayslipPdf.Render(dto));
+    }
+
+    public async Task RecordPrintAsync(Guid payslipId, CancellationToken cancellationToken)
+    {
+        var payslip = await GetVisiblePayslipAsync(payslipId, cancellationToken);
+        var record = payslip.PayrollRecord!;
+        _auditLogger.Add(AuditActions.PayslipPrinted, nameof(Payslip), payslip.Id, $"Payslip {payslip.PayslipNumber} of {record.EmployeeCode}, {record.PayrollPeriod!.Name}.");
+        await _payrollRepository.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// The one access check for a single payslip (view, PDF, print): HR/Admin any payslip; anyone else only their own,
+    /// and only once the payroll is finalized or paid. Everything else is "not found", never 403, so another
+    /// employee's payslip id (or a draft one) reveals nothing.
+    /// </summary>
+    private async Task<Payslip> GetVisiblePayslipAsync(Guid payslipId, CancellationToken cancellationToken)
+    {
+        var payslip = await _payrollRepository.GetPayslipAsync(payslipId, cancellationToken);
+        var visible = payslip?.PayrollRecord?.PayrollPeriod is { } period
+            && (_currentUser.IsHrOrAdmin() || (_currentUser.IsSelf(payslip.EmployeeId) && IsEmployeeVisible(period)));
+        return visible ? payslip! : throw new NotFoundException($"Payslip with id '{payslipId}' was not found.");
+    }
+
+    private static bool IsEmployeeVisible(PayrollPeriod period) => PayslipIssuer.EmployeeVisibleStatuses.Contains(period.Status);
 
     // ---- export ----
 
@@ -179,7 +210,7 @@ public class PayslipService : IPayslipService
         }
 
         var exportFormat = TableExporter.ParseFormat(format);
-        var (filter, request) = BuildSearch(query, employeeId, onlyWithPayslip: true, onlyPaid: false);
+        var (filter, request) = BuildSearch(query, employeeId, onlyWithPayslip: true, onlyPaid: false, employeeView: mine);
         var (records, total) = await _payrollRepository.SearchHistoryAsync(filter, request with { Page = 1, PageSize = MaxExportRows }, cancellationToken);
         if (total > MaxExportRows)
         {
@@ -230,9 +261,9 @@ public class PayslipService : IPayslipService
 
     // ---- helpers ----
 
-    private async Task<PagedResult<PayrollRecordDto>> SearchAsync(PayrollHistoryQueryDto query, Guid? employeeId, bool onlyWithPayslip, bool onlyPaid, CancellationToken cancellationToken)
+    private async Task<PagedResult<PayrollRecordDto>> SearchAsync(PayrollHistoryQueryDto query, Guid? employeeId, bool onlyWithPayslip, bool onlyPaid, bool employeeView, CancellationToken cancellationToken)
     {
-        var (filter, request) = BuildSearch(query, employeeId, onlyWithPayslip, onlyPaid);
+        var (filter, request) = BuildSearch(query, employeeId, onlyWithPayslip, onlyPaid, employeeView);
         var (items, total) = await _payrollRepository.SearchHistoryAsync(filter, request, cancellationToken);
         var isHr = _currentUser.IsHrOrAdmin();
 
@@ -245,7 +276,8 @@ public class PayslipService : IPayslipService
         };
     }
 
-    private (PayrollHistoryFilter Filter, PageRequest Request) BuildSearch(PayrollHistoryQueryDto query, Guid? employeeId, bool onlyWithPayslip, bool onlyPaid)
+    /// <param name="employeeView">An employee looking at their own payroll: only finalized or paid payroll (Day 20).</param>
+    private (PayrollHistoryFilter Filter, PageRequest Request) BuildSearch(PayrollHistoryQueryDto query, Guid? employeeId, bool onlyWithPayslip, bool onlyPaid, bool employeeView)
     {
         if (query.Month is < 1 or > 12)
         {
@@ -285,12 +317,13 @@ public class PayslipService : IPayslipService
             onlyWithPayslip || paymentStatus is not null,
             query.PayrollPeriodId,
             query.DesignationId,
-            ParseEnum<PayrollRecordStatus>(query.RecordStatus, "record status"));
+            ParseEnum<PayrollRecordStatus>(query.RecordStatus, "record status"),
+            employeeView ? PayslipIssuer.EmployeeVisibleStatuses : null);
 
         return (filter, new PageRequest(page, pageSize, sort, descending));
     }
 
-    private async Task<PayslipDto> BuildAsync(PayrollRecord record, CancellationToken cancellationToken)
+    private async Task<PayslipDto> BuildAsync(PayrollRecord record, string auditAction, CancellationToken cancellationToken)
     {
         var period = record.PayrollPeriod!;
         var payslip = record.Payslip;
@@ -298,8 +331,8 @@ public class PayslipService : IPayslipService
         var approverIds = new[] { period.ApprovedByUserId }.OfType<Guid>().ToList();
         var names = approverIds.Count == 0 ? new Dictionary<Guid, string>() : await _userRepository.GetDisplayNamesAsync(approverIds, cancellationToken);
 
-        _auditLogger.Add(AuditActions.PayslipViewed, payslip is null ? nameof(PayrollRecord) : nameof(Payslip), payslip?.Id ?? record.Id,
-            $"Payslip of {record.EmployeeCode}, {period.Name}.");
+        _auditLogger.Add(auditAction, payslip is null ? nameof(PayrollRecord) : nameof(Payslip), payslip?.Id ?? record.Id,
+            payslip is null ? $"Preview of {record.EmployeeCode}, {period.Name}." : $"Payslip {payslip.PayslipNumber} of {record.EmployeeCode}, {period.Name}.");
         await _payrollRepository.SaveChangesAsync(cancellationToken);
 
         return new PayslipDto
@@ -315,6 +348,7 @@ public class PayslipService : IPayslipService
             EmployeeCode = record.EmployeeCode,
             EmployeeName = record.EmployeeName,
             EmployeePhotoUrl = employee?.PhotoUrl,
+            JoiningDate = employee is null ? null : DateOnly.FromDateTime(employee.JoiningDate),
             DepartmentName = record.DepartmentName,
             DesignationName = record.DesignationName,
             PeriodName = period.Name,
@@ -322,19 +356,19 @@ public class PayslipService : IPayslipService
             PeriodEndDate = period.EndDate,
             Earnings = Lines(
                 ("Basic salary", record.BasicSalary, true),
-                ("House rent", record.HouseRent, false),
-                ("Medical allowance", record.MedicalAllowance, false),
-                ("Transport allowance", record.TransportAllowance, false),
-                ("Other allowance", record.OtherAllowance, false),
+                ("House rent", record.HouseRent, true),
+                ("Medical allowance", record.MedicalAllowance, true),
+                ("Transport allowance", record.TransportAllowance, true),
+                ("Other allowance", record.OtherAllowance, true),
                 ("Overtime", record.OvertimeAmount, false),
                 ("Bonus", record.Bonus, false)),
             Deductions = Lines(
-                ("Tax", record.Tax, false),
-                ("Provident fund", record.ProvidentFund, false),
-                ("Unpaid leave", record.LeaveDeduction, false),
+                ("Tax", record.Tax, true),
+                ("Provident fund", record.ProvidentFund, true),
+                ("Unpaid leave", record.LeaveDeduction, true),
                 ("Advance", record.AdvanceDeduction, false),
-                ("Loan", record.LoanDeduction, false),
-                ("Other deduction", record.OtherDeduction, false)),
+                ("Loan", record.LoanDeduction, true),
+                ("Other deduction", record.OtherDeduction, true)),
             GrossSalary = record.GrossSalary,
             TotalDeduction = record.TotalDeduction,
             NetSalary = record.NetSalary,

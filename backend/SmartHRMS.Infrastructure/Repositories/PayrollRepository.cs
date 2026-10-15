@@ -251,6 +251,26 @@ public class PayrollRepository : IPayrollRepository
         return counts.ToDictionary(c => c.PeriodId, c => new PayslipCounts(c.Issued, c.Paid));
     }
 
+    public async Task<Dictionary<Guid, PayableTotals>> GetPayableTotalsAsync(IReadOnlyCollection<Guid> periodIds, CancellationToken cancellationToken)
+    {
+        var ids = periodIds.ToList();
+        var totals = await _dbContext.Payslips
+            .AsNoTracking()
+            .Where(p => ids.Contains(p.PayrollPeriodId) && p.PayrollRecord!.NetSalary > 0)
+            .GroupBy(p => p.PayrollPeriodId)
+            .Select(g => new
+            {
+                PeriodId = g.Key,
+                Count = g.Count(),
+                Amount = g.Sum(p => p.PayrollRecord!.NetSalary),
+                PaidCount = g.Count(p => p.PaymentStatus == PaymentStatus.Paid),
+                PaidAmount = g.Sum(p => p.PaymentStatus == PaymentStatus.Paid ? p.PayrollRecord!.NetSalary : 0m),
+            })
+            .ToListAsync(cancellationToken);
+
+        return totals.ToDictionary(t => t.PeriodId, t => new PayableTotals(t.Count, t.Amount, t.PaidCount, t.PaidAmount));
+    }
+
     public async Task AddPayslipAsync(Payslip payslip, CancellationToken cancellationToken)
     {
         await _dbContext.Payslips.AddAsync(payslip, cancellationToken);

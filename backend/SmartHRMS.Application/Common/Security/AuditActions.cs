@@ -43,4 +43,12 @@ public static class AuditActions
     // Day 19: reporting and exports (no amounts in the details).
     public const string PayrollReportExported = "PayrollReportExported";
     public const string PayslipsExported = "PayslipsExported";
+
+    // Day 20: payslip PDF downloads and prints (views are PayslipViewed).
+    public const string PayslipDownloaded = "PayslipDownloaded";
+    public const string PayslipPrinted = "PayslipPrinted";
+
+    // Day 21: disbursement corrections and payment exports (no amounts in the details).
+    public const string PaymentCorrected = "PaymentCorrected";
+    public const string PaymentsExported = "PaymentsExported";
 }

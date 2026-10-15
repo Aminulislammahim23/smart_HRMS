@@ -11,6 +11,7 @@ namespace smartHRMS.Api.Controllers;
 /// Salary payment for Finalized payroll: payment batches, per-employee payments (transactions) and their status
 /// history. Viewing: HR and Admin; every change: Admin. Employees see only their own payments (GET /api/payments/me).
 /// Payment states: Pending → Processing → Paid / Failed; Failed → Processing (retry); Pending → Cancelled.
+/// Day 21: disbursement dashboard (summary), payment export, evidence-based confirmation and Paid corrections.
 /// </summary>
 [ApiController]
 [Route("api/payments")]
@@ -89,6 +90,35 @@ public class PaymentsController : ControllerBase
         return Ok(ApiResponse<PaymentBatchDto>.Ok(batch, "Payment batch cancelled."));
     }
 
+    // ---- Day 21: disbursement dashboard and export ----
+
+    /// <summary>
+    /// Disbursement dashboard (HR/Admin): totals and one row per eligible (Finalized or Paid) payroll: payable, paid,
+    /// outstanding, not initiated, pending, processing and failed counts and amounts, all computed by the server.
+    /// Filters: payrollPeriodId, year; paging of the payroll rows: page, pageSize.
+    /// </summary>
+    [Authorize(Policy = Policies.HrOrAdmin)]
+    [HttpGet("summary")]
+    [ProducesResponseType(typeof(ApiResponse<DisbursementSummaryDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<ApiResponse<DisbursementSummaryDto>>> GetSummary([FromQuery] DisbursementSummaryQueryDto query, CancellationToken cancellationToken)
+    {
+        var summary = await _paymentService.GetSummaryAsync(query, cancellationToken);
+        return Ok(ApiResponse<DisbursementSummaryDto>.Ok(summary, "Disbursement summary retrieved successfully."));
+    }
+
+    /// <summary>Payments as CSV or XLSX (HR/Admin) with the payment-list filters. <c>format</c>: csv (default) or xlsx.</summary>
+    [Authorize(Policy = Policies.HrOrAdmin)]
+    [HttpGet("export")]
+    [Produces("text/csv", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/json")]
+    [ProducesResponseType(typeof(FileContentResult), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> Export([FromQuery] PaymentQueryDto query, [FromQuery] string? format, CancellationToken cancellationToken)
+    {
+        var file = await _paymentService.ExportAsync(query, format, cancellationToken);
+        return File(file.Content, file.ContentType, file.FileName);
+    }
+
     // ---- payments ----
 
     /// <summary>
@@ -125,7 +155,10 @@ public class PaymentsController : ControllerBase
         return Ok(ApiResponse<PaymentDto>.Ok(payment, "Payment retrieved successfully."));
     }
 
-    /// <summary>Processing → Paid. Optional transactionReference and paymentDate (default today; not future, not before the period).</summary>
+    /// <summary>
+    /// Processing → Paid, with evidence: transactionReference is required for BankTransfer, MobileBanking and Cheque;
+    /// Cash/Other need a reference or remarks. paymentDate defaults to today (not future, not before the period).
+    /// </summary>
     [Authorize(Policy = Policies.Admin)]
     [HttpPost("{id:guid}/paid")]
     [ProducesResponseType(typeof(ApiResponse<PaymentDto>), StatusCodes.Status200OK)]
@@ -138,29 +171,46 @@ public class PaymentsController : ControllerBase
         return Ok(ApiResponse<PaymentDto>.Ok(payment, "Payment marked as paid."));
     }
 
-    /// <summary>Processing → Failed (reason required).</summary>
+    /// <summary>Processing → Failed (reason required; the attempt's transactionReference is optional and kept in history).</summary>
     [Authorize(Policy = Policies.Admin)]
     [HttpPost("{id:guid}/failed")]
     [ProducesResponseType(typeof(ApiResponse<PaymentDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status409Conflict)]
-    public async Task<ActionResult<ApiResponse<PaymentDto>>> MarkFailed(Guid id, PaymentReasonDto dto, CancellationToken cancellationToken)
+    public async Task<ActionResult<ApiResponse<PaymentDto>>> MarkFailed(Guid id, MarkPaymentFailedDto dto, CancellationToken cancellationToken)
     {
         var payment = await _paymentService.MarkFailedAsync(id, dto, cancellationToken);
         return Ok(ApiResponse<PaymentDto>.Ok(payment, "Payment marked as failed."));
     }
 
-    /// <summary>Failed → Processing (optional reason).</summary>
+    /// <summary>Failed → Processing (optional reason; optional paymentMethod for the new attempt). Earlier attempts stay in history.</summary>
     [Authorize(Policy = Policies.Admin)]
     [HttpPost("{id:guid}/retry")]
     [ProducesResponseType(typeof(ApiResponse<PaymentDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status409Conflict)]
-    public async Task<ActionResult<ApiResponse<PaymentDto>>> Retry(Guid id, PaymentReasonDto? dto, CancellationToken cancellationToken)
+    public async Task<ActionResult<ApiResponse<PaymentDto>>> Retry(Guid id, RetryPaymentDto? dto, CancellationToken cancellationToken)
     {
-        var payment = await _paymentService.RetryAsync(id, dto ?? new PaymentReasonDto(), cancellationToken);
+        var payment = await _paymentService.RetryAsync(id, dto ?? new RetryPaymentDto(), cancellationToken);
         return Ok(ApiResponse<PaymentDto>.Ok(payment, "Payment retried."));
+    }
+
+    /// <summary>
+    /// Day 21: corrects a Paid payment's transactionReference and/or paymentDate (reason required). The payment stays
+    /// Paid and its amount can't change; the old values stay in the status history and the audit log.
+    /// </summary>
+    [Authorize(Policy = Policies.Admin)]
+    [HttpPost("{id:guid}/correct")]
+    [ProducesResponseType(typeof(ApiResponse<PaymentDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<ApiResponse<PaymentDto>>> Correct(Guid id, CorrectPaymentDto dto, CancellationToken cancellationToken)
+    {
+        var payment = await _paymentService.CorrectAsync(id, dto, cancellationToken);
+        return Ok(ApiResponse<PaymentDto>.Ok(payment, "Payment corrected."));
     }
 
     /// <summary>Pending → Cancelled (reason required). The employee can be paid in a later batch.</summary>

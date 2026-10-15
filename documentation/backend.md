@@ -1,7 +1,8 @@
 # SmartHRMS Backend Documentation
 
-> Describes the code, database and API **as they are after Day 19 (2026-10-08)**. Everything marked as implemented was
-> verified at runtime against the SQL Server database (see §22, §23 and §25–§29). Planned work is listed only in §24
+> Describes the code, database and API **as they are after Day 21 (2026-10-15)**. Everything marked as implemented was
+> verified at runtime against SQL Server (see §22, §23 and §25–§31). Day 21 was verified on a separate scratch database;
+> its one migration is **not yet applied** to `SmartHRMSDB` (§31.9). Planned work is listed only in §24
 > and is clearly marked as not implemented. Day 16 also delivered the authentication, leave and audit groundwork that
 > payroll depends on (§26.1–§26.4), because no earlier day had built it.
 
@@ -12,7 +13,7 @@
 **SmartHRMS** is a Human Resource Management System. This repository contains its backend: an ASP.NET Core Web API
 that stores HR data in SQL Server and serves it as JSON to the React frontend in `frontend/smarthrms-web`.
 
-**Current scope (Day 1–19):**
+**Current scope (Day 1–21):**
 
 | Area | What exists |
 |---|---|
@@ -23,7 +24,7 @@ that stores HR data in SQL Server and serves it as JSON to the React frontend in
 | Attendance (Day 13) | Check-in/check-out at office time, working-minute calculation, Present/Late/Absent/HalfDay/Leave status, HR-maintained records (CRUD), history and filtering — see §25 |
 | Security (Day 16) | JWT sign-in with roles (Employee, Manager, HR, Admin), server-side authorization on every endpoint, audit log — see §17 and §26 |
 | Leave (Day 16) | Apply, manager/HR review, cancel — see §26.3 |
-| Payroll (Days 16–19) | Salary structures, payroll calculation and approval (§26), payslips and payroll history (§27), finalization and payment batches (§28), reporting, exports and the payroll audit trail (§29) |
+| Payroll (Days 16–20) | Salary structures, payroll calculation and approval (§26), payslips and payroll history (§27), finalization and payment batches (§28), reporting, exports, the payroll audit trail (§29), the employee payroll portal with PDF payslips (§30), and disbursement tracking (§31) |
 | Platform | Standard response envelope, centralized error handling, validation, OpenAPI/Swagger, CORS for the frontend |
 
 **Not implemented:** recruitment, performance, leave balances, and the items in §24.
@@ -51,6 +52,8 @@ that stores HR data in SQL Server and serves it as JSON to the React frontend in
 | 17 | Payslips issued at approval, payroll history, employee self-service payroll, provident fund (§27) |
 | 18 | Payroll finalization and lock; payment batches, transactions and status history replace direct "mark paid" (§28) |
 | 19 | Payroll reporting (period history, summary, departments, employees, deductions, allowances), CSV/Excel export, payroll details and payslip history filters, payroll audit trail (§29) |
+| 20 | Employee payroll portal: finalized-only visibility (payslips issued at finalization), own payroll summary, payslip PDF download, audited print, joining date on the payslip (§30) |
+| 21 | Payroll disbursement and payment tracking on the Day 18 batches: disbursement dashboard, payment evidence, failed-attempt references, retry with another method, audited corrections of paid payments, department filter and payment export, employee latest-payment card (§31) |
 
 ---
 
@@ -581,7 +584,7 @@ Validation always happens on the server; the frontend repeats the rules only for
 
 | Area | Employee | Manager | HR | Admin |
 |---|---|---|---|---|
-| Own profile, documents, attendance, leave, payslips | read | read | read/write | read/write |
+| Own profile, documents, attendance, leave; own payslips of finalized payroll (view, PDF, print) | read | read | read/write | read/write |
 | Direct reports: basic record (no salary), attendance, leave | — | read; approve/reject leave | all | all |
 | Employees, departments, designations, documents, attendance (write) | — | — | ✓ | ✓ |
 | Leave of anyone (approve/reject/cancel) | — | — | ✓ | ✓ |
@@ -652,7 +655,7 @@ dotnet ef migrations has-pending-model-changes --project SmartHRMS.Infrastructur
 dotnet ef migrations remove --project SmartHRMS.Infrastructure --startup-project smartHRMS.Api
 ```
 
-Applied migrations (all 11 applied; no pending model changes):
+Migrations (1–11 applied to `SmartHRMSDB`; 12 generated on Day 21 and **pending**, see §31.9; no pending model changes):
 
 | # | Migration | Change |
 |---|---|---|
@@ -666,10 +669,12 @@ Applied migrations (all 11 applied; no pending model changes):
 | 8 | `AddAttendance` (Day 13) | creates `Attendances` (FK to `Employees`, NO ACTION), unique (`EmployeeId`, `AttendanceDate`), index on `AttendanceDate`. Purely additive; no existing table touched |
 | 9 | `AddAuthLeaveAuditPayroll` (Day 16) | `ApplicationUsers`: `Role`, `SecurityStamp`, lockout and last-login columns, `EmployeeId` nullable with a filtered unique index, `PasswordHash` → `nvarchar(256)` (table was empty); `Employees.ManagerId` (self FK + check); new tables `LeaveRequests`, `AuditLogs`, `EmployeeSalaryStructures`, `PayrollPeriods`, `PayrollRecords` (see §26.5). Additive for every table that held data |
 | 10 | `AddPayslipsAndProvidentFund` (Day 17) | new table `Payslips` (unique `PayslipNumber` and `PayrollRecordId`, FKs NO ACTION, check "paid ⇔ payment date"); `PayrollRecords.ProvidentFund` and `EmployeeSalaryStructures.MonthlyProvidentFund` (`decimal(18,2)`, default 0); the two non-negative checks re-created to include them. Purely additive (both payroll tables were empty) |
+| 12 | `AddPaymentAttemptReference` (Day 21, pending) | `PaymentStatusHistories.Reference` (`nvarchar(100)`, nullable). Purely additive; no data changed |
 | 11 | `AddPayrollFinalizationAndPayments` (Day 18) | `PayrollPeriods`: `FinalizedAt`, `FinalizedByUserId` (FK), `IsLocked`; `Payslips`: `PaymentMethod`, `PaymentReference`; new tables `PaymentBatches`, `PaymentBatchItems`, `PaymentTransactions`, `PaymentStatusHistories` with filtered unique indexes against duplicate payment (see §28.15). Purely additive |
 
-Day 19 needed no migration: reporting, exports and the audit trail read the existing payroll, payslip, payment and
-`AuditLogs` tables.
+Day 19 and Day 20 needed no migration. Day 19: reporting, exports and the audit trail read the existing payroll, payslip, payment and
+`AuditLogs` tables. Day 20: the `Payslips` table (Day 17) already holds a unique, stable payslip number and every
+field the payslip needs; only the issue moment changed (finalization instead of approval).
 
 Before each schema change since Day 9 a verified copy-only backup was taken
 (`SmartHRMSDB_before_Day9/10/11/12/13/16/17/18_*.bak` in the SQL Server backup folder). Migrations are only generated after a
@@ -780,7 +785,10 @@ every write of the Day 1–13 modules is HR/Admin.
 | POST | `/api/payroll/{periodId}/payslips` | issue missing payslips of approved payroll (HR/Admin) | — | `PayslipGenerationResultDto` | 200, 404, 409 |
 | GET | `/api/payroll/employee/{employeeId}/payslips[?filters]` | one employee's payslips (self or HR/Admin) | query | `PagedResult<PayrollRecordDto>` | 200, 400, 403, 404 |
 | GET | `/api/payroll/me/payslips[?filters]` | own payslips (employee from the token) | query | `PagedResult<PayrollRecordDto>` | 200, 400 |
-| GET | `/api/payroll/me/payslips/current` | own latest payslip | — | `PayslipDto` | 200, 404 |
+| GET | `/api/payroll/me/payslips/current` | own latest payslip (finalized or paid payroll only) | — | `PayslipDto` | 200, 404 |
+| GET | `/api/payroll/me/summary[?year]` | own payroll summary of a year and the latest payslip (Day 20) | query | `MyPayrollSummaryDto` | 200, 400 |
+| GET | `/api/payroll/payslips/{id}/pdf` | payslip as PDF: own (finalized or paid) or HR/Admin; audited (Day 20) | — | `application/pdf` | 200, 401, 404 |
+| POST | `/api/payroll/payslips/{id}/print` | record a print in the audit log; same access as viewing (Day 20) | — | message | 200, 401, 404 |
 | GET | `/api/payroll/me/payments[?page&pageSize]` | own paid payslips | query | `PagedResult<PayrollRecordDto>` | 200, 400 |
 | POST | `/api/payments/batches` | create a batch for a finalized payroll (Admin) | `CreatePaymentBatchDto` | `PaymentBatchDto` | 201, 400, 403, 404, 409 |
 | GET | `/api/payments/batches[?payrollPeriodId&status&page&pageSize]` | batches (HR/Admin) | query | `PagedResult<PaymentBatchDto>` | 200, 400 |
@@ -840,7 +848,7 @@ The repository itself contains only unit tests (see §24).
 
 ---
 
-## 23. Day 1–19 Completion Matrix
+## 23. Day 1–21 Completion Matrix
 
 | Day | Feature | Status | Evidence |
 |-----|---------|--------|----------|
@@ -962,6 +970,13 @@ The repository itself contains only unit tests (see §24).
 | 19 | Reports: summary/salary expense, departments, employees, deductions, allowances/bonus; totals equal SQL sums | PASS | Day 19 suite + unit tests |
 | 19 | CSV/XLSX export of reports and payslips, authorization and audit | PASS | Day 19 suites + unit tests |
 | 19 | Payroll audit trail (category, user, date filters; status transitions; no amounts) | PASS | Day 19 suites + unit tests |
+| 21 | Disbursement dashboard: only Finalized/Paid payroll; payable, paid, outstanding, not-initiated, pending, processing, failed from SQL aggregates | PASS | unit tests + Day 21 live suite (scratch DB) |
+| 21 | Payment evidence before Paid; amount re-checked against the locked record | PASS | unit tests (incl. mutation check) + live suite |
+| 21 | Failed-attempt reference kept through retries; retry with another method | PASS | unit tests + live suite |
+| 21 | Paid correction (reference/date only, reason, history row, audit), Paid never unpaid | PASS | unit tests + live suite |
+| 21 | Department filter and payment CSV/XLSX export (HR/Admin, audited) | PASS | unit tests + live suite |
+| 21 | Authorization (HR view, Admin act, employee own only, manager none, 401) | PASS | unit tests + live suite |
+| 21 | Frontend: disbursement dashboard, payment actions, export, employee latest-payment card | PASS (build/lint only) | `tsc`, `eslint`, `vite build`; no browser run (§31.12) |
 
 ---
 
@@ -977,7 +992,7 @@ The repository itself contains only unit tests (see §24).
 | Medium | Payroll: leavers are not paid in a final settlement | Only Active/OnLeave employees are calculated; an employee who left mid-month needs a manual adjustment |
 | Low | Payroll approval needs a second Admin when the only Admin is also an employee in the payroll | The self-approval rule refuses approval of a payroll that contains your own salary; likewise an Admin can't change the status of their own salary payment |
 | Medium | Payments are recorded, not executed | No bank, mobile-banking or payment-gateway integration: an Admin records the outcome of each transfer (Day 18 scope) |
-| Low | No payment reversal | A Paid payment is final; correcting it needs a future reversal workflow |
+| Low | No payment reversal | A Paid payment stays Paid. Since Day 21 its reference and date can be corrected (§31.6); reversing the money (refund, unpaid) needs a future workflow and a bank integration |
 | Low | Finalized payroll has no unlock | A finalized payroll can only be paid; corrections need a future correction workflow |
 | Low | Absences are not deducted by default | `Payroll:DeductRecordedAbsences` turns on deduction of explicit Absent days; days without any attendance record are never deducted |
 | Medium | Pagination only on payroll history, payslip, payment and report lists | Other lists return every matching row. Attendance grows by one row per employee per day, so clients should always pass a date or range |
@@ -1331,6 +1346,9 @@ Day 17 adds these. It doesn't recalculate anything: the payroll calculation stay
 
 ### 27.2 Payslip generation timing
 
+> **Day 20 change:** payslips are now issued at **finalization**, not approval, and employees see only finalized or
+> paid payroll (§30). The rest of this section describes the Day 17 behaviour.
+
 > **Day 18 change:** the two `mark-paid` endpoints and the "Record payment" panel described in this section were
 > removed. Approved payroll is now finalized (and locked), and salaries are paid through payment batches (§28). The
 > rest of §27 (payslip issuing, history, self-service) is unchanged.
@@ -1531,7 +1549,7 @@ path with full history. The bundled frontend was updated.
    - the payroll has records;
    - no record needs review and none has a negative net salary;
    - every record has salary information.
-5. Issues any missing payslip (only for payroll approved before Day 17).
+5. Issues the payslips (Day 20: this is when payslips are issued, see §30).
 6. Sets `Status = Finalized`, `IsLocked = true`, `FinalizedAt` and `FinalizedByUserId`, and marks every record `Finalized`.
 7. Writes the `PayrollFinalized` and `PayrollLocked` audit entries.
 
@@ -1565,7 +1583,7 @@ path with full history. The bundled frontend was updated.
 2. **Process** (`POST /api/payments/batches/{id}/process`): every `Pending` payment becomes `Processing`. With nothing
    pending it answers 409.
 3. **Per payment:**
-   - `paid`: optional `transactionReference` and `paymentDate` (defaults to today; not in the future, not before the
+   - `paid`: `transactionReference` (Day 21: required for bank transfer, mobile banking and cheque, §31.4) and `paymentDate` (defaults to today; not in the future, not before the
      period starts);
    - `failed`: reason required;
    - `retry`: Failed → Processing, reason optional;
@@ -2113,3 +2131,428 @@ library. No package was added.
 
 All test data used `TEST-*` prefixes and was removed. The checksum of every real table is identical to the pre-test
 baseline.
+
+---
+
+## 30. Day 20 — Employee Payroll Portal & Payslip Management
+
+### 30.1 Features (what existed, what changed)
+
+| Requirement | Before Day 20 | Day 20 |
+|---|---|---|
+| Employee payroll portal | *My Payroll* (`/payroll/my`): current payslip, payslip history, payment history (Day 17/18) | **Reused.** Added a payroll summary (year totals and latest payslip) and PDF download on every payslip |
+| Payroll history (own) | `GET /api/payroll/me/payslips`, paged | **Reused**, now limited to finalized or paid payroll |
+| Payslip details | `GET /api/payroll/payslips/{id}` and the payslip page | **Reused.** Added the joining date and payroll status; the standard earning and deduction lines are always shown, even when zero |
+| Payslip number | `PS-{period start yyyyMMdd}-{employee code}`, unique index, set once at issue (Day 17) | **Reused unchanged.** It is stable, never regenerated, and duplicates are impossible |
+| PDF | Browser "Save as PDF" only | **Added** a server PDF: `GET /api/payroll/payslips/{id}/pdf` |
+| Print | Print-ready page | **Reused.** Prints are now audited (`POST /api/payroll/payslips/{id}/print`) |
+| HR/Admin payslip access | Payslip list with search, month, year, status filters (Day 17/19) | **Reused**, plus PDF download per row |
+| Audit | `PayslipViewed` (Day 17) | **Added** `PayslipDownloaded` and `PayslipPrinted`; the details now carry the payslip number |
+
+### 30.2 API endpoints
+
+| Method | Endpoint | Who | Notes |
+|---|---|---|---|
+| GET | `/api/payroll/me/summary[?year]` | any signed-in employee | Payslips, gross, deduction, net and paid of the year (default: this office year), plus the latest payslip. Employee from the token; finalized or paid payroll only |
+| GET | `/api/payroll/me/payslips`, `/me/payslips/current`, `/me/payments`, `/me/payslips/export` | any signed-in employee | Existing; now finalized or paid payroll only |
+| GET | `/api/payroll/payslips/{id}` | owner, HR, Admin | Existing; owner only for finalized or paid payroll |
+| GET | `/api/payroll/payslips/{id}/pdf` | owner, HR, Admin | **New.** `application/pdf`, file name `{payslip number}.pdf`; audited |
+| POST | `/api/payroll/payslips/{id}/print` | owner, HR, Admin | **New.** Records a print; the page then prints |
+| GET | `/api/payroll/payslips[?search&employeeId&departmentId&payrollPeriodId&month&year&status&paymentStatus&page…]` | HR, Admin | Existing (search, month and status filters) |
+
+The prompt's example routes (`/api/payslips/my/{payrollId}`, `/api/payroll/my-history`, …) were **not** added: the
+existing `/api/payroll/me/*` and `/api/payroll/payslips/{id}` routes are the project's equivalents.
+
+### 30.3 Authorization rules
+
+| | Employee | Manager | HR | Admin |
+|---|---|---|---|---|
+| Own payslips of finalized or paid payroll: view, PDF, print, history, summary | ✓ | ✓ (own) | ✓ (own) | ✓ (own) |
+| Own payroll that is Draft, Calculated, PendingApproval, Approved or Cancelled | 404 / hidden | 404 / hidden | — | — |
+| Another employee's payslip, PDF, print or record | 404 | 404 (also direct reports) | ✓ | ✓ |
+| Another employee's payslip list or history | 403 | 403 | ✓ | ✓ |
+| HR payslip list, payroll history, reports | 403 | 403 | ✓ | ✓ |
+| Generate, finalize, edit or delete payroll | 403 | 403 | generate/edit/delete only where allowed; finalize 403 | ✓ (finalized payroll can't be edited: 409) |
+| Payroll audit trail | 403 | 403 | 403 | ✓ |
+
+**Enforcement:**
+- **One check, in the service:** `PayslipService.GetVisiblePayslipAsync` is shared by view, PDF and print. HR/Admin
+  pass. Anyone else passes only for their own payslip (`employee_id` from the token) of finalized or paid payroll.
+- **Lists and summary:** every "me" query adds `PeriodStatuses ∈ {Finalized, Paid}` in the database query itself.
+- **IDs can't be manipulated:**
+  - changing a payslip id, record id or `employeeId` in the URL, query or body can't reach other data;
+  - `me` routes ignore a sent `employeeId`;
+  - foreign ids answer 404 with no salary data in the body.
+- **Managers:** keep the Day 16 rule of no salary access to direct reports.
+- **Frontend:** it only hides what the server refuses (sidebar, routes, buttons).
+
+### 30.4 Employee access rules (payroll status → what the employee sees)
+
+| Payroll status | Employee |
+|---|---|
+| Draft, Calculated, PendingApproval (processing) | nothing: no payslip exists, records hidden (404) |
+| Approved | nothing: still no payslip. Approval alone isn't final; an Admin must finalize |
+| **Finalized** | own payroll and payslip: view, PDF download, print; included in the summary |
+| Paid | the same, with payment status, date, method and reference |
+| Cancelled | nothing (cancelled payroll is never finalized) |
+
+### 30.5 HR and Admin access
+
+- **HR and Admin:**
+  - the HR payslip list (`/payroll/payslips`): search, employee, department, payroll period, month, year, status and
+    payment status filters;
+  - view, PDF download and print of any payslip;
+  - CSV/Excel export (Day 19);
+  - HR/Admin also see a preview of not-yet-final payroll (marked "Preview", no payslip number) on the record route.
+- **Admin only:** finalizes payroll, which issues the payslips, and reads the audit trail.
+
+### 30.6 Payslip lifecycle and generation timing
+
+```
+Draft → Calculated → PendingApproval → Approved → Finalized (payslips issued) → Paid
+```
+
+- **Issued at finalization.** `PayrollService.FinalizeAsync` issues one payslip per record in the same transaction as
+  finalization and lock, and audits `PayslipsGenerated` ("N payslips issued at finalization"). Before Day 20 this
+  happened at approval.
+- **Approval issues none.** `POST /api/payroll/{id}/payslips` (Generate) works only for Finalized or Paid payroll; any
+  other status gets 409 "Payslips are issued only for finalized payroll". It only fills gaps, which makes it
+  idempotent and safe to run concurrently (a unique index on `PayrollRecordId` backs this up).
+- **The payslip is the final snapshot.** Its amounts are the locked payroll record's and are never recalculated. The
+  PDF and the page render the same `PayslipDto`.
+- **Payslip number:** `PS-{period start yyyyMMdd}-{employee code}`, for example `PS-20261001-EMP-001`.
+  - It is set once at issue and is unique in the database (`IX_Payslips_PayslipNumber`).
+  - It never changes on view or download.
+  - The prompt's example format (`PS-2026-10-000001`) was not adopted, because the existing numbering already meets
+    every rule and changing it would renumber issued payslips.
+- **Payment:** payment status and date change later, through payment batches (§28).
+
+### 30.7 PDF behaviour
+
+**Endpoint:** `GET /api/payroll/payslips/{id}/pdf` returns a one-page A4 PDF.
+
+**Generation:**
+- The project had no PDF library. `smartHRMS.Application.Common.Export.SimplePdf` is a small PDF 1.4 writer that uses
+  the standard Helvetica fonts, lines and shaded boxes. No new package, no embedded font; files are about 4 KB.
+- `PayslipPdf` lays out the payslip:
+  - company name and address, title and payslip number;
+  - employee information: ID, name, department, designation, joining date;
+  - payroll information: month, pay period, payment date, payroll and payment status;
+  - earnings and deductions side by side, with gross and total deduction;
+  - a net salary band, attendance days and the issue/approval footer.
+
+**Content and limits:**
+- No bank, identity or other confidential numbers are included; only what the payslip page shows.
+- Text outside the Windows-1252 character set is printed as "?", because the standard fonts have no other glyphs.
+  Employee names in other scripts need an embedded font (a known limitation).
+
+**Verification:** unit tests check the cross-reference table, escaping and content. The live run rendered a downloaded
+PDF with the Windows PDF engine (`Windows.Data.Pdf`): one A4 page, correct values.
+
+**Print:** printing still uses the payslip page and browser print (print CSS hides the app shell). The page records
+each print through `POST …/print` before opening the dialog; a failed record never blocks printing.
+
+### 30.8 Audit logging
+
+| Action | When | Details |
+|---|---|---|
+| `PayslipsGenerated` | finalization (or Generate) | number issued |
+| `PayslipViewed` | payslip page or API view | payslip number, employee code, period |
+| `PayslipDownloaded` | PDF download | same |
+| `PayslipPrinted` | print | same |
+
+- **What each entry records:** the existing audit model, so user id and user name, action, entity (`Payslip`),
+  entity id and time.
+- **No amounts:** salary amounts are never written into the details.
+- **IP addresses:** the audit model has no IP column, so request IPs aren't recorded. Adding one would need a
+  migration and wasn't required.
+- **Where to see them:** the Day 19 *Payroll audit trail* page.
+
+### 30.9 Database changes
+
+None, so no migration. `Payslips` (Day 17) is already the minimal 1:1 table linked to the payroll record, with the
+unique number. No payroll, salary, allowance or deduction field was duplicated. `has-pending-model-changes` reports
+no drift.
+
+### 30.10 Frontend
+
+- **My Payroll (`/payroll/my`, the existing employee route):**
+  - Payroll summary: a year selector; cards for payslips, gross, total deduction, and net with paid;
+  - a latest-payslip card with View / Download PDF / Print;
+  - tabs: current payslip (with Download PDF and Print), payslip history (period, gross, deduction, net, payment
+    status, paid on; actions View, Download PDF, Print), payment history (Day 18);
+  - empty, loading and error states.
+- **Payslip page (`/payroll/payslips/:id`):**
+  - Download PDF and Print buttons;
+  - joining date and payroll status in the employee block;
+  - another employee's id shows "Not found".
+- **HR/Admin *Payslips* page:** per-row Download PDF next to View and Print.
+- **Employee dashboard:** the latest-pay card uses finalized or paid payroll only.
+- **Service functions** (in the existing API client): `getMyPayrollSummary`, `downloadPayslipPdf`,
+  `recordPayslipPrint`. Errors such as 401/403/404 surface through the existing `ApiError` handling (toast or error
+  state).
+
+### 30.11 Edge cases
+
+| Case | Behaviour |
+|---|---|
+| Employee has no payroll | Summary zeros, "No payslips yet", current payslip 404 → empty state |
+| Draft / processing / approved / cancelled payroll | No payslip; employee gets 404 / empty lists; HR sees a "Preview" |
+| Finalized / paid payroll | Payslip visible, downloadable, printable |
+| Zero deductions | Every standard deduction line shown as 0.00; total 0.00 |
+| Multiple allowances / deductions | All standard lines, plus overtime, bonus and advance when not zero |
+| Inactive employee | HR/Admin still view and download their payslips; the payslip is a snapshot |
+| Missing optional information | Department, designation and joining date show "—" / "-" |
+| Payslip already generated | Generate is idempotent (0 new); the number never changes |
+| Concurrent generation | 5 parallel requests: all 200, no extra payslip (and the unique index on the record) |
+| PDF generation failure | Any exception goes through the global handler as 500 with the standard envelope; the PDF is built in memory before anything is sent |
+| Unauthorized / foreign / invalid / non-existent id | 401 without token; 404 for foreign or unknown ids; non-GUID routes 404 |
+
+### 30.12 Testing results (2026-10-09)
+
+TESTRESULTS_PLACEHOLDER
+
+### 30.13 Security checks
+
+- [x] Authentication required (401 on PDF, print, summary and lists without a token)
+- [x] Employee can access only own payroll; `employeeId`, payslip id and record id manipulation tested (404/403)
+- [x] Employee can't access draft, calculated, pending, approved or cancelled payroll, including a legacy payslip of
+  non-final payroll (unit test)
+- [x] Employee can't download another employee's PDF or record their print
+- [x] Employee can't call HR/Admin endpoints (403)
+- [x] HR/Admin authorization works (view, PDF, list)
+- [x] PDF and print endpoints validate access with the same check as viewing
+- [x] No salary data in unauthorized responses (404 bodies checked)
+- [x] Frontend route guards exist (`RoleRoute`) but are not the protection
+
+---
+
+## 31. Day 21 — Payroll Disbursement & Payment Tracking
+
+### 31.1 Audit: what already existed and what Day 21 added
+
+Day 18 had already built the disbursement core (§28). Day 21 extends it; no second payment module, table set, status
+model or endpoint family was created.
+
+| Day 21 requirement | Before Day 21 | Day 21 |
+|---|---|---|
+| Only finalized, approved payroll is paid | ✓ batches only from `Finalized` + locked payroll (§28.4) | **Reused.** Also re-checked when a payment is confirmed |
+| Workflow Pending → Processing → Paid / Failed, retry | ✓ `PaymentRules` (§28.6) | **Reused unchanged.** No new status |
+| Payment record (payroll, employee, amount, method, status, reference, dates, failure reason, users, timestamps) | ✓ `PaymentTransactions` + `PaymentStatusHistories` | **Reused**, plus a `Reference` on each history row |
+| Payable amount from the database | ✓ item amount = locked net salary | **Reused**, plus a mismatch check before Paid |
+| Duplicate prevention (DB constraints, concurrency) | ✓ filtered unique indexes, `RowVersion` (§28.12) | **Reused unchanged** |
+| Partial payments | not supported (one active payment per record, full net) | **Unchanged: full-payment tracking only** |
+| Payment evidence before Paid | reference optional | **Added**: required reference or remarks (§31.4) |
+| Failure history and retries keep references | failure reason kept in history; no attempt reference | **Added** attempt reference, attempt counts, retry with another method |
+| Corrections of paid records | none (Paid is final) | **Added** audited reference/date correction (§31.6) |
+| Disbursement dashboard (payable, paid, pending, processing, failed, successful) | per-batch counts only | **Added** `GET /api/payments/summary` and the *Disbursement* page |
+| Eligible payroll list | period page `canCreatePaymentBatch` | **Added** to the summary (`canCreateBatch` per payroll) |
+| Filters: period, employee, department, method, status | all but department | **Added** department filter and column |
+| Payment report export | none | **Added** `GET /api/payments/export` (CSV/XLSX, existing `TableExporter`) |
+| Employee payment status in My Payroll | Payment history tab (Day 18) | **Added** a latest-payment card; tabs, PDF and print unchanged |
+| Employee bank / payment-profile data | **does not exist** in the schema | nothing to expose; none added |
+| Roles | HR view, Admin act (§28.10) | **Unchanged**; no permission widened |
+
+### 31.2 Payment workflow and transitions
+
+The Day 18 state machine is unchanged (§28.6):
+
+```
+Pending ──process──▶ Processing ──paid (evidence)──▶ Paid ──correct (reference/date only)──▶ Paid
+   │                    │  ▲
+ cancel           failed│  │retry (optionally another method)
+   ▼                    ▼  │
+Cancelled              Failed
+```
+
+- Paid and Cancelled are final. A Paid payment can't be failed, cancelled, retried, paid again or deleted (409).
+- A correction is **not** a transition: it writes a `Paid → Paid` history row and never changes status or amount.
+- "Failed → Pending" from the brief is not offered: retry goes straight to Processing (the existing rule).
+
+### 31.3 Eligibility
+
+- Only `Finalized` (locked) and `Paid` payroll appears in the dashboard; only `Finalized` payroll can get a batch.
+- `Draft`, `Calculated` (processing), `PendingApproval`, `Approved` and `Cancelled` (rejected) payroll is never listed,
+  and batch creation answers 400 `Payroll must be finalized before payment.` Unknown payroll ids answer 404.
+- Before a payment becomes Paid, `PaymentRules.EnsureAmountMatchesPayroll` re-checks that the payroll is still locked
+  and that the transaction and item amounts equal the record's finalized net salary (409 otherwise).
+
+### 31.4 Payment evidence (`POST /api/payments/{id}/paid`)
+
+| Method | Required to confirm |
+|---|---|
+| `BankTransfer`, `MobileBanking`, `Cheque` | `transactionReference` (400 `A transaction reference is required to confirm a {method} payment.`) |
+| `Cash`, `Other` | `transactionReference` (e.g. receipt number) **or** `remarks` (400 `Payment evidence is required: …`) |
+
+- `remarks` (max 400) is kept in the status-history reason (`Payment confirmed: …`). The reference is kept in the
+  history row's `Reference` and on the transaction, item and payslip.
+- **Behaviour change:** before Day 21 a reference was optional for every method. API clients confirming bank transfers
+  without one now get 400. The bundled frontend was updated.
+- A salary whose payslip is already Paid can't be confirmed again (409), in addition to the state machine.
+
+### 31.5 Failures and retries
+
+- `POST /{id}/failed` takes `reason` (required) and an optional `transactionReference` of the failed attempt. Both stay
+  in that history row after a retry clears the current failure reason.
+- `POST /{id}/retry` takes an optional `reason` and an optional `paymentMethod` for the new attempt (e.g. cash after a
+  bounced transfer). A method change is written to the history reason and the audit entry.
+- `PaymentDto` (single payment) carries `attemptCount` (moves into Processing) and `failedAttemptCount`.
+
+### 31.6 Corrections of paid payments (`POST /api/payments/{id}/correct`, Admin)
+
+- Body: `transactionReference` and/or `paymentDate`, and `reason` (required, max 300). Blank fields stay unchanged, so
+  evidence can be replaced but never removed.
+- Only `Paid` payments (409 otherwise). The payment date follows the paid-date rules (not future, not before the
+  period). No change → 400. The Admin's own salary → 403.
+- Writes a `Paid → Paid` history row (`Correction (reference was 'X'; date was …): reason`, with the new reference in
+  `Reference`), updates the transaction, item and payslip, and audits `PaymentCorrected` with old → new values.
+- The amount, the status and the payroll record are never touched. Reversal/refund is not implemented (§31.13).
+
+### 31.7 API (Day 21)
+
+| Method | Endpoint | Who | Notes |
+|---|---|---|---|
+| GET | `/api/payments/summary?payrollPeriodId&year&page&pageSize` | HR, Admin | **New.** `{ totals, payrolls: PagedResult<PayrollDisbursementDto> }`, newest period first |
+| GET | `/api/payments/export?format=csv\|xlsx&…list filters` | HR, Admin | **New.** At most 10,000 rows; audited `PaymentsExported` |
+| POST | `/api/payments/{id}/correct` | Admin | **New.** See §31.6 |
+| POST | `/api/payments/{id}/paid` | Admin | **Changed:** evidence rule; new optional `remarks` |
+| POST | `/api/payments/{id}/failed` | Admin | **Extended:** optional `transactionReference` |
+| POST | `/api/payments/{id}/retry` | Admin | **Extended:** optional `paymentMethod` |
+| GET | `/api/payments` | HR, Admin | **Extended:** `departmentId` filter (employee's current department) |
+| GET | `/api/payments/{id}`, `/api/payments/me` | owner, HR, Admin | **Extended DTO**; `/me` ignores `employeeId` and `departmentId` |
+
+**DTO changes:** `PaymentDto` gains `departmentName`, `payslipNumber`, `attemptCount`, `failedAttemptCount` and
+`actions.canCorrect`; `PaymentStatusHistoryDto` gains `reference`.
+
+**Summary definitions** (`DisbursementFiguresDto`; every figure comes from SQL aggregates, decimals throughout):
+
+| Figure | Definition |
+|---|---|
+| `payableCount` / `payableAmount` | records of eligible payroll with net salary > 0 and an issued payslip; sum of their finalized net salaries |
+| `paidCount` / `paidAmount` | of those, payslip Paid (equals the sum of Paid payments; legacy Day 17 payments included) |
+| `outstandingAmount` | payable − paid (the "Pending (outstanding)" card) |
+| `pendingCount/Amount`, `processingCount/Amount`, `failedCount/Amount` | records whose active (non-cancelled) payment is in that status |
+| `notInitiatedCount/Amount` | payable − paid − pending − processing − failed: in no active payment (cancelled payments count here) |
+| `canCreateBatch` | Admin, payroll Finalized, no open batch, `notInitiatedCount > 0` |
+
+**Implementation:** `IPayrollRepository.GetPayableTotalsAsync` (`GROUP BY` period over payslips and records), and
+`IPaymentRepository.GetActivePaymentTotalsAsync` and `GetPeriodIdsWithOpenBatchAsync`. The eligible periods come from
+the existing `SearchPeriodsAsync`. Payroll rows are paged in memory (one row per monthly payroll).
+
+### 31.8 Role / permission matrix (Day 21)
+
+| Action | Employee | Manager | HR | Admin |
+|---|---|---|---|---|
+| Disbursement dashboard, payment list, export | 403 | 403 | ✓ | ✓ |
+| Create/process/cancel batch, mark paid/failed, retry, correct | 403 | 403 | 403 | ✓ (never own salary: 403) |
+| Own payments (`/me`, own `/{id}`), latest-payment card | ✓ read-only | ✓ own | ✓ own | ✓ own |
+| Another employee's payment | 404 | 404 | ✓ | ✓ |
+
+- **Enforcement:** controller policies, and again in `PaymentService` (`EnsureHrOrAdmin`, `EnsureAdmin`, the
+  own-salary check). Unauthenticated requests get 401.
+- **Frontend:** it only hides what the server refuses (server-computed `actions` and `canCreateBatch`).
+- **HR stays view-only**, as decided on Day 18 (segregation of duties). The brief's "HR/Admin manage" was **not**
+  applied because it would widen the existing permission matrix.
+
+### 31.9 Database and safe migration
+
+- **Migration:** `20261015091533_AddPaymentAttemptReference` adds `PaymentStatusHistories.Reference nvarchar(100) NULL`.
+  It is purely additive: no table, column, index or row is dropped or rewritten. `Down` drops only that column.
+- **No other schema change:** the existing payment tables, filtered unique indexes and row versions are reused.
+- **Verified:** `has-pending-model-changes` reports no drift; the idempotent script contains only the
+  `ALTER TABLE … ADD` and the history insert; all 12 migrations applied cleanly to a new scratch database.
+- **Not applied to `SmartHRMSDB`.** The API doesn't migrate on startup. Until the migration is applied, the payment
+  endpoints that read status history fail against `SmartHRMSDB` (unknown column), so apply it before running Day 21
+  code there.
+
+**Safe application** (from `backend/`):
+
+1. Stop the API.
+2. Take a verified copy-only backup, as for earlier days:
+   `BACKUP DATABASE SmartHRMSDB TO DISK = N'…\SmartHRMSDB_before_Day21_<timestamp>.bak' WITH COPY_ONLY, CHECKSUM;`
+   then `RESTORE VERIFYONLY FROM DISK = N'…' WITH CHECKSUM;`
+3. Optional review:
+   `dotnet ef migrations script AddPayrollFinalizationAndPayments AddPaymentAttemptReference --idempotent --project SmartHRMS.Infrastructure --startup-project smartHRMS.Api -o day21.sql`
+4. Apply: `dotnet ef database update --project SmartHRMS.Infrastructure --startup-project smartHRMS.Api`, or run the
+   reviewed script in SSMS.
+5. Check: `SELECT TOP 1 MigrationId FROM __EFMigrationsHistory ORDER BY MigrationId DESC` returns
+   `20261015091533_AddPaymentAttemptReference`, and `has-pending-model-changes` reports no changes.
+6. Rollback if needed: `dotnet ef database update AddPayrollFinalizationAndPayments …` (drops only the new column;
+   attempt references recorded since then are lost), or restore the backup.
+
+For production, run the reviewed script through the normal change process; never run `database update` directly
+against production.
+
+### 31.10 Audit events
+
+| Action | Entity | Details (never amounts) |
+|---|---|---|
+| `PaymentBatchCreated`, `PaymentProcessingStarted`, `PaymentBatchCancelled` | PaymentBatch | as §28.13 (initiation) |
+| `PaymentMarkedPaid` | PaymentTransaction | employee code, date, reference |
+| `PaymentMarkedFailed` | PaymentTransaction | transition, attempt reference (new), reason |
+| `PaymentRetried` | PaymentTransaction | transition, method change (new) |
+| `PaymentCancelled` | PaymentTransaction | transition, reason |
+| `PaymentCorrected` (new) | PaymentTransaction | old → new reference/date, reason |
+| `PaymentsExported` (new) | PaymentTransaction | row count, format |
+| `PayrollPaid` | PayrollPeriod | last payable payslip paid |
+
+All of them appear in the Day 19 audit trail (`category=payroll`). Every status change also writes a
+`PaymentStatusHistories` row.
+
+### 31.11 Frontend
+
+| Route / component | Who | What |
+|---|---|---|
+| `/payments` **(new)**, sidebar *Payroll → Disbursement* | HR, Admin | Cards: finalized payable, paid, pending (outstanding), processing, failed, successful. Per payroll: payable, paid, outstanding, paid-employee progress, in-progress counts (linked to the filtered payment list), a *Payments* link and *Batch* (create-batch dialog, only when `canCreateBatch`). Year filter, paging, loading/empty/error states |
+| `/payments/history`, `/payments/batches/:id` | HR, Admin | **Extended** `PaymentList`: department filter and column, CSV/Excel export, *Correct* row action |
+| Payment details dialog | owner, HR, Admin | **Extended**: department, payslip, attempts, confirmed/created/updated times, reference per history step, correction rows |
+| Payment action dialog | Admin | **Extended**: reference required for bank/mobile/cheque (remarks for cash/other), attempt reference on failure, method on retry, correction form |
+| `/payroll/my` | employee | **Extended**: read-only *Latest salary payment* card (status, method, paid or planned date, reference, details). Summary, payslip history, PDF and print unchanged |
+
+`CreatePaymentBatchModal` now takes `unpaid` and `amount` props, so the dashboard and the period page share it. There
+is no mock data; every number comes from the API.
+
+### 31.12 Testing (2026-10-15)
+
+| Check | Result |
+|---|---|
+| `dotnet build` (solution) | PASS: 0 warnings, 0 errors |
+| Unit tests | PASS: 410 / 410 (383 before Day 21; 27 new in `PaymentDisbursementTests`; the existing payment tests were updated for the evidence rule and the new DTO types) |
+| Mutation check | PASS: disabling the evidence and amount guards makes 5 new tests fail |
+| Day 21 live API suite (scratch DB `SmartHRMS_Day21Verify2`, real SQL Server) | PASS: 99 / 99 on clean data |
+| `tsc -b`, `eslint`, `vite build` | PASS |
+| Frontend unit tests | NOT RUN: the frontend has no test runner configured |
+| Browser / UI run | NOT RUN: no browser automation was available in this session |
+| Day 1–20 live and browser regression suites | NOT RUN: those scripts are not in the repository; the regression evidence is the full unit suite (410 / 410) |
+
+**Live suite coverage:**
+- eligibility: Calculated, PendingApproval and Approved refused; Finalized eligible; unknown id 404;
+- summary figures compared with the record sums;
+- 5 parallel batch creations → 1 × 201 and 4 × 409; client totals ignored;
+- Pending → Paid 409; reference required (400 with message); reference character set; future date;
+- **5 parallel confirmations of one payment → 1 × 200 and 4 × 409**;
+- failure with attempt reference, retry with Cash, cash with remarks, attempt counts, mixed-state summary;
+- corrections: reason required, unpaid refused, no change refused, success, history row, payslip mirror;
+- Paid can't be failed or cancelled;
+- department, status and method filters; CSV/XLSX export and a bad format;
+- employee and manager 403 on dashboard, list, export and actions; HR 403 on actions; 401 without a token;
+- `/me` isolation with ignored filters; foreign id 404;
+- completion: paid = payable, payroll Paid, no further batch; finalized salaries unchanged;
+- audit actions present, with the user and no amounts.
+
+**Runs:** the first run (first scratch database) gave 98 / 99 because the script read the error text from the
+envelope's `message` instead of `errors`; the API response itself was correct. A second run on the same database was
+not a valid test (its payroll also contained the first run's employees), so the suite ran once more on a fresh
+database: 99 / 99.
+
+### 31.13 Known limitations and remaining tasks
+
+- **No bank or gateway integration:** payments are recorded after the transfer; nothing is sent to a bank.
+- **Full payments only:** no partial or split payments (none existed before Day 21).
+- **No reversal or refund:** a Paid payment can only have its reference and date corrected.
+- **Retry goes to Processing**, not back to Pending.
+- **HR is view-only** for disbursement (the Day 18 decision is kept).
+- **Migration pending** on `SmartHRMSDB` (§31.9).
+- **UI not exercised in a browser** in this session; run the frontend against the migrated database to confirm it.
+- **Scratch databases** `SmartHRMS_Day21Verify` and `SmartHRMS_Day21Verify2` (test data only) remain on
+  `MAHIM\SQLEXPRESS`; drop them when no longer needed.

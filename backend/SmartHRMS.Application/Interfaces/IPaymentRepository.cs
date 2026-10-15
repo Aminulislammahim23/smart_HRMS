@@ -12,7 +12,11 @@ public sealed record PaymentFilter(
     PaymentMethod? Method,
     DateOnly? From,
     DateOnly? To,
-    string? Search);
+    string? Search,
+    Guid? DepartmentId = null);
+
+/// <summary>Active (non-cancelled) payments of one payroll in one status, summed in the database (Day 21).</summary>
+public sealed record ActivePaymentTotal(Guid PayrollPeriodId, PaymentTransactionStatus Status, int Count, decimal Amount);
 
 public interface IPaymentRepository
 {
@@ -36,6 +40,12 @@ public interface IPaymentRepository
 
     /// <summary>Read-only page with batch, item and payroll record (+ period, payslip) loaded; newest first.</summary>
     Task<(List<PaymentTransaction> Items, int TotalCount)> SearchTransactionsAsync(PaymentFilter filter, int page, int pageSize, CancellationToken cancellationToken);
+
+    /// <summary>Count and amount of active (non-cancelled) payment items per payroll and status (Day 21 dashboard).</summary>
+    Task<List<ActivePaymentTotal>> GetActivePaymentTotalsAsync(IReadOnlyCollection<Guid> payrollPeriodIds, CancellationToken cancellationToken);
+
+    /// <summary>The payrolls among <paramref name="payrollPeriodIds"/> that have a batch that is neither Paid nor Cancelled.</summary>
+    Task<HashSet<Guid>> GetPeriodIdsWithOpenBatchAsync(IReadOnlyCollection<Guid> payrollPeriodIds, CancellationToken cancellationToken);
 
     Task AddBatchAsync(PaymentBatch batch, CancellationToken cancellationToken);
 

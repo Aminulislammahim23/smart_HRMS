@@ -6,13 +6,19 @@ namespace smartHRMS.Application.Features.Payroll;
 
 /// <summary>
 /// The single place where payslips are issued and their payment outcome recorded. A payslip only ever exists for
-/// Approved, Finalized or Paid payroll: its amounts are the record's, which is locked from approval on, so the payslip
-/// is the approved snapshot. Payment itself is managed by payment batches (Day 18); the payslip mirrors the result.
+/// Finalized or Paid payroll (Day 20: issued at finalization, when every calculation and approval is complete): its
+/// amounts are the record's, which is locked, so the payslip is the final snapshot. Payment itself is managed by payment batches (Day 18); the payslip mirrors the result.
 /// </summary>
 internal static class PayslipIssuer
 {
     public static readonly IReadOnlyCollection<PayrollPeriodStatus> IssuableStatuses =
-        new[] { PayrollPeriodStatus.Approved, PayrollPeriodStatus.Finalized, PayrollPeriodStatus.Paid };
+        new[] { PayrollPeriodStatus.Finalized, PayrollPeriodStatus.Paid };
+
+    /// <summary>
+    /// The only payroll an employee (or manager) can see of their own: finalized or paid. Draft, Calculated,
+    /// PendingApproval, Approved and Cancelled payroll is hidden from them (Day 20 rule, enforced in every query).
+    /// </summary>
+    public static readonly IReadOnlyCollection<PayrollPeriodStatus> EmployeeVisibleStatuses = IssuableStatuses;
 
     public static string NumberFor(PayrollPeriod period, PayrollRecord record) => $"PS-{period.StartDate:yyyyMMdd}-{record.EmployeeCode}";
 
@@ -21,7 +27,7 @@ internal static class PayslipIssuer
     {
         if (!IssuableStatuses.Contains(period.Status))
         {
-            throw new ConflictException($"Payslips are issued only for approved payroll; this payroll is {period.Status}.");
+            throw new ConflictException($"Payslips are issued only for finalized payroll; this payroll is {period.Status}.");
         }
 
         var issued = new List<Payslip>();

@@ -125,6 +125,7 @@ public class FakePayrollRepository : IPayrollRepository
         if (filter.Year is not null) query = query.Where(r => r.PayrollPeriod!.StartDate.Year == filter.Year);
         if (filter.Month is not null) query = query.Where(r => r.PayrollPeriod!.StartDate.Month == filter.Month);
         if (filter.PeriodStatus is not null) query = query.Where(r => r.PayrollPeriod!.Status == filter.PeriodStatus);
+        if (filter.PeriodStatuses is not null) query = query.Where(r => filter.PeriodStatuses.Contains(r.PayrollPeriod!.Status));
         if (filter.OnlyWithPayslip) query = query.Where(r => r.Payslip is not null);
         if (filter.PaymentStatus is not null) query = query.Where(r => r.Payslip?.PaymentStatus == filter.PaymentStatus);
         if (filter.Search is not null) query = query.Where(r => r.EmployeeCode.Contains(filter.Search, StringComparison.OrdinalIgnoreCase) || r.EmployeeName.Contains(filter.Search, StringComparison.OrdinalIgnoreCase));
@@ -151,6 +152,16 @@ public class FakePayrollRepository : IPayrollRepository
             .Where(p => periodIds.Contains(p.PayrollPeriodId))
             .GroupBy(p => p.PayrollPeriodId)
             .ToDictionary(g => g.Key, g => new PayslipCounts(g.Count(), g.Count(p => p.PaymentStatus == PaymentStatus.Paid))));
+
+    public Task<Dictionary<Guid, PayableTotals>> GetPayableTotalsAsync(IReadOnlyCollection<Guid> periodIds, CancellationToken cancellationToken) =>
+        Task.FromResult(Records
+            .Where(r => periodIds.Contains(r.PayrollPeriodId) && r.Payslip is not null && r.NetSalary > 0)
+            .GroupBy(r => r.PayrollPeriodId)
+            .ToDictionary(g => g.Key, g => new PayableTotals(
+                g.Count(),
+                g.Sum(r => r.NetSalary),
+                g.Count(r => r.Payslip!.PaymentStatus == PaymentStatus.Paid),
+                g.Where(r => r.Payslip!.PaymentStatus == PaymentStatus.Paid).Sum(r => r.NetSalary))));
 
     public List<Payslip> AddedPayslips { get; } = new();
 

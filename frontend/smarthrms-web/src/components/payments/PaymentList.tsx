@@ -1,9 +1,10 @@
-import { Ban, CheckCircle2, Eye, RotateCcw, RotateCw, Search, Wallet, XCircle } from 'lucide-react'
+import { Ban, CheckCircle2, Eye, PencilLine, RotateCcw, RotateCw, Search, Wallet, XCircle } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useApi } from '../../hooks/useApi'
+import { getDepartments } from '../../services/departmentService'
 import { getEmployees } from '../../services/employeeService'
-import { getPayments } from '../../services/paymentService'
+import { exportPayments, getPayments } from '../../services/paymentService'
 import { getPayrollPeriods } from '../../services/payrollService'
 import {
   PAYMENT_METHODS,
@@ -16,6 +17,7 @@ import {
 import { PAGE_SIZE_OPTIONS } from '../../utils/constants'
 import { enumLabel, formatAmount, formatDate, formatDateTime } from '../../utils/formatters'
 import { EmptyState } from '../common/EmptyState'
+import { ExportButtons } from '../common/ExportButtons'
 import { ErrorState } from '../common/ErrorState'
 import { Loading } from '../common/Loading'
 import { Pagination } from '../common/Pagination'
@@ -37,6 +39,7 @@ function queryFromParams(params: URLSearchParams, batchId?: string): PaymentQuer
   return {
     batchId,
     employeeId: params.get('employeeId') || undefined,
+    departmentId: batchId ? undefined : params.get('departmentId') || undefined,
     payrollPeriodId: batchId ? undefined : params.get('payrollPeriodId') || undefined,
     status: isPaymentTransactionStatus(status) ? status : undefined,
     paymentMethod: !batchId && isPaymentMethod(method) ? method : undefined,
@@ -53,6 +56,7 @@ const ROW_ACTIONS: { action: PaymentAction; label: string; icon: typeof Wallet; 
   { action: 'failed', label: 'Mark as failed', icon: XCircle, className: 'text-error', allowed: (p) => p.actions.canMarkFailed },
   { action: 'retry', label: 'Retry', icon: RotateCw, className: '', allowed: (p) => p.actions.canRetry },
   { action: 'cancel', label: 'Cancel payment', icon: Ban, className: 'text-error', allowed: (p) => p.actions.canCancel },
+  { action: 'correct', label: 'Correct reference or date', icon: PencilLine, className: 'text-warning', allowed: (p) => p.actions.canCorrect },
 ]
 
 /**
@@ -92,9 +96,17 @@ export function PaymentList({ batchId, refreshKey, onChanged }: { batchId?: stri
     return () => window.clearTimeout(timer)
   }, [searchInput, query.search, update])
 
-  const lookups = useCallback((signal: AbortSignal) => Promise.all([getEmployees(signal), batchId ? Promise.resolve([]) : getPayrollPeriods({}, signal)]), [batchId])
+  const lookups = useCallback(
+    (signal: AbortSignal) =>
+      Promise.all([
+        getEmployees(signal),
+        batchId ? Promise.resolve([]) : getPayrollPeriods({}, signal),
+        batchId ? Promise.resolve([]) : getDepartments(signal),
+      ]),
+    [batchId],
+  )
   const { data: lookupData } = useApi(lookups)
-  const [employees, periods] = lookupData ?? [[], []]
+  const [employees, periods, departments] = lookupData ?? [[], [], []]
 
   const load = useCallback((signal: AbortSignal) => getPayments(query, signal), [query])
   const { data, error, loading, reload } = useApi(load)
@@ -106,7 +118,7 @@ export function PaymentList({ batchId, refreshKey, onChanged }: { batchId?: stri
     lastRefreshKey.current = refreshKey
     reload()
   }, [refreshKey, reload])
-  const filtered = !!(query.employeeId || query.payrollPeriodId || query.status || query.paymentMethod || query.from || query.to || query.search)
+  const filtered = !!(query.employeeId || query.departmentId || query.payrollPeriodId || query.status || query.paymentMethod || query.from || query.to || query.search)
 
   const reset = () => {
     setSearchInput('')
@@ -124,6 +136,7 @@ export function PaymentList({ batchId, refreshKey, onChanged }: { batchId?: stri
         </div>
       ),
     },
+    ...(batchId ? [] : [{ key: 'department', header: 'Department', render: (p: Payment) => p.departmentName ?? '—', className: 'hidden xl:table-cell' }]),
     ...(batchId
       ? []
       : [
@@ -206,6 +219,14 @@ export function PaymentList({ batchId, refreshKey, onChanged }: { batchId?: stri
                   </option>
                 ))}
               </select>
+              <select className="select select-sm w-full" value={query.departmentId ?? ''} onChange={(e) => update({ departmentId: e.target.value })} aria-label="Department">
+                <option value="">All departments</option>
+                {departments.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.name}
+                  </option>
+                ))}
+              </select>
               <select className="select select-sm w-full" value={query.paymentMethod ?? ''} onChange={(e) => update({ paymentMethod: e.target.value })} aria-label="Payment method">
                 <option value="">Any method</option>
                 {PAYMENT_METHODS.map((m) => (
@@ -238,10 +259,13 @@ export function PaymentList({ batchId, refreshKey, onChanged }: { batchId?: stri
           />
         ) : (
           <>
-            <p className="text-sm text-base-content/60">
-              {data.totalCount} payments
-              {loading && <span className="loading loading-spinner loading-xs ml-2 align-middle" />}
-            </p>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-sm text-base-content/60">
+                {data.totalCount} payments
+                {loading && <span className="loading loading-spinner loading-xs ml-2 align-middle" />}
+              </p>
+              <ExportButtons label="Export payments" onExport={(format) => exportPayments(query, format)} />
+            </div>
             <Table columns={columns} rows={data.items} rowKey={(p) => p.id} compact />
             <Pagination
               page={data.page}

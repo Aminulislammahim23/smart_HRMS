@@ -1,10 +1,10 @@
 # SmartHRMS Web
 
-React + TypeScript frontend for the SmartHRMS API (Day 1–19): sign-in with roles, dashboard, employees (with photo),
+React + TypeScript frontend for the SmartHRMS API (Day 1–21): sign-in with roles, dashboard, employees (with photo),
 departments, designations, employee profiles, documents, attendance, leave (apply / approve), salary structures,
 payroll (periods, calculation, review, approval, finalization), printable payslips, payroll history and salary
-payments (payment batches, payment processing, payment history, the employee's own payments), payroll reports with
-CSV/Excel export, and the payroll audit trail.
+payments (disbursement dashboard, payment batches, payment processing, payment history, the employee's own payments),
+payroll reports with CSV/Excel export, and the payroll audit trail.
 
 Day 19 pages:
 - **Payroll periods** (`/payroll/periods`): payroll history by period, with totals, processed and finalized dates,
@@ -13,6 +13,23 @@ Day 19 pages:
 - **Payslips** (`/payroll/payslips`): adds a payroll-period filter, the generated date, and export.
 - **Payroll reports** (`/payroll/reports`): summary, departments, employees, deductions, allowances and bonus.
 - **Payroll audit trail** (`/payroll/audit`, Admin).
+
+Day 20: **My Payroll** (`/payroll/my`) is the employee payroll portal. It has a payroll summary of the year and the latest
+payslip, the payslip history, and View / Download PDF / Print on every payslip. Employees see only finalized payroll:
+payslips are issued when an Admin finalizes the payroll. The PDF comes from the server
+(`/api/payroll/payslips/{id}/pdf`), and every view, download and print is audited.
+
+Day 21: payroll disbursement and payment tracking (backend documentation §31).
+- **Disbursement** (`/payments`, HR/Admin): finalized payable, paid, outstanding, processing, failed and successful
+  totals, and one row per finalized payroll with its progress. Admins can start a payment batch from here when the
+  server allows it.
+- **Payment history and batch details:** department filter and column, CSV/Excel export, and a *Correct* action for
+  paid payments (reference or date only, reason required, kept in the payment history).
+- **Payment actions:** confirming a bank transfer, mobile banking or cheque payment needs its transaction reference;
+  cash and other payments need a reference or remarks. A failure can record the attempt's reference, and a retry can
+  switch the payment method.
+- **My Payroll:** a read-only *Latest salary payment* card shows the employee's own payment status and date.
+- Nothing is sent to a bank: payments are recorded after the transfer.
 
 Exports are downloaded through the API with the sign-in token (`src/services/exportService.ts`). Every amount comes
 from the server.
@@ -26,10 +43,10 @@ every request again, so hiding a page is never the only protection.
 
 | Role | Sees |
 |---|---|
-| Employee | own dashboard, profile (read-only), attendance (check in/out), leave, payroll, payslips (with export of their own list) and own payments |
+| Employee | own dashboard, profile (read-only), attendance (check in/out), leave, own finalized payroll and payslips (view, PDF, print, export of their own list) and own payments |
 | Manager | the same, plus leave approvals for direct reports (no access to their reports' salaries) |
-| HR | everything except users, the payroll audit trail and payroll approval/finalization; payroll reports and exports; payment batches and payment history read-only |
-| Admin | everything, including Users & roles, the payroll audit trail, payroll approval and finalization, and payments (create batch, process, paid/failed/retry/cancel; never their own salary) |
+| HR | everything except users, the payroll audit trail and payroll approval/finalization; payroll reports and exports; disbursement dashboard, payment batches, payment history and payment export read-only |
+| Admin | everything, including Users & roles, the payroll audit trail, payroll approval and finalization, and payments (create batch, process, paid/failed/retry/cancel/correct; never their own salary) |
 
 First sign-in: the backend creates the first Admin from `Auth:BootstrapAdmin` (see the backend documentation §17).
 That Admin then creates accounts on the *Users & roles* page.

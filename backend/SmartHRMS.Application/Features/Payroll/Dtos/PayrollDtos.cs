@@ -333,6 +333,9 @@ public class PayslipDto
     /// <summary>Relative URL of the employee's current photo, or null.</summary>
     public string? EmployeePhotoUrl { get; set; }
 
+    /// <summary>The employee's joining date (Day 20); null if the employee record no longer exists.</summary>
+    public DateOnly? JoiningDate { get; set; }
+
     public string? DepartmentName { get; set; }
 
     public string? DesignationName { get; set; }

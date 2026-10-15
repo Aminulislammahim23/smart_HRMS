@@ -27,14 +27,20 @@ export function PaymentDetailsModal({ paymentId, onClose }: { paymentId: string;
             columns={3}
             items={[
               { label: 'Employee', value: `${payment.employeeName} (${payment.employeeCode})` },
+              { label: 'Department', value: payment.departmentName },
               { label: 'Payroll period', value: payment.periodName },
+              { label: 'Payslip', value: payment.payslipNumber },
               { label: 'Batch', value: payment.batchNumber },
-              { label: 'Amount', value: <span className="font-semibold tabular-nums">{formatAmount(payment.amount)}</span> },
+              { label: 'Net payable (finalized)', value: <span className="font-semibold tabular-nums">{formatAmount(payment.amount)}</span> },
               { label: 'Method', value: enumLabel(payment.paymentMethod) },
               { label: 'Status', value: <PaymentTransactionStatusBadge status={payment.status} /> },
               { label: payment.status === 'Paid' ? 'Paid on' : 'Planned date', value: formatDate(payment.paymentDate) },
               { label: 'Transaction reference', value: payment.transactionReference },
+              { label: 'Confirmed at', value: payment.processedAt ? formatDateTime(payment.processedAt) : null },
+              { label: 'Attempts', value: payment.attemptCount ? `${payment.attemptCount} (${payment.failedAttemptCount ?? 0} failed)` : null },
               { label: 'Failure reason', value: payment.failureReason },
+              { label: 'Created', value: formatDateTime(payment.createdAt) },
+              { label: 'Last updated', value: payment.updatedAt ? formatDateTime(payment.updatedAt) : null },
             ]}
           />
           {payment.payslipId && (
@@ -52,12 +58,15 @@ export function PaymentDetailsModal({ paymentId, onClose }: { paymentId: string;
                     <span className={`block size-3 rounded-full ${h.newStatus === 'Failed' || h.newStatus === 'Cancelled' ? 'bg-error' : 'bg-primary'}`} />
                   </div>
                   <div className="timeline-end mb-3">
-                    <p className="text-sm font-medium">{h.previousStatus ? `${h.previousStatus} → ${h.newStatus}` : `Created (${h.newStatus})`}</p>
+                    <p className="text-sm font-medium">
+                      {!h.previousStatus ? `Created (${h.newStatus})` : h.previousStatus === h.newStatus ? `Correction (${h.newStatus})` : `${h.previousStatus} → ${h.newStatus}`}
+                    </p>
                     <p className="text-xs text-base-content/60">
                       {formatDateTime(h.changedAt)}
                       {h.changedBy ? ` · ${h.changedBy}` : ''}
                     </p>
                     {h.reason && <p className="text-xs text-base-content/70">{h.reason}</p>}
+                    {h.reference && <p className="text-xs text-base-content/70">Reference: {h.reference}</p>}
                   </div>
                   {index < all.length - 1 && <hr className="bg-primary" />}
                 </li>

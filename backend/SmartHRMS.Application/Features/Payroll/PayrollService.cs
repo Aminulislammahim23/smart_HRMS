@@ -29,7 +29,8 @@ namespace smartHRMS.Application.Features.Payroll;
 /// </summary>
 public class PayrollService : IPayrollService
 {
-    private static readonly IReadOnlyCollection<PayrollPeriodStatus> FinalStatuses = new[] { PayrollPeriodStatus.Approved, PayrollPeriodStatus.Finalized, PayrollPeriodStatus.Paid };
+    /// <summary>What an employee may see of their own payroll (Day 20: finalized or paid only).</summary>
+    private static readonly IReadOnlyCollection<PayrollPeriodStatus> FinalStatuses = PayslipIssuer.EmployeeVisibleStatuses;
     private static readonly IReadOnlyCollection<LeaveStatus> ApprovedOnly = new[] { LeaveStatus.Approved };
 
     private readonly IPayrollRepository _payrollRepository;
@@ -346,15 +347,8 @@ public class PayrollService : IPayrollService
         period.UpdatedAt = now;
         SetRecordStatus(period, PayrollRecordStatus.Approved);
 
-        // The payslips are issued in the same transaction as the approval: they exist exactly when payroll is final.
-        var payslips = PayslipIssuer.IssueMissing(period, userId, now);
-        foreach (var payslip in payslips)
-        {
-            await _payrollRepository.AddPayslipAsync(payslip, cancellationToken);
-        }
-
+        // Day 20: no payslip yet. Payslips are issued when an Admin finalizes the payroll (FinalizeAsync).
         _auditLogger.Add(AuditActions.PayrollApproved, nameof(PayrollPeriod), period.Id, "PendingApproval → Approved.");
-        _auditLogger.Add(AuditActions.PayslipsGenerated, nameof(PayrollPeriod), period.Id, $"{payslips.Count} payslips issued.");
         await _payrollRepository.SaveChangesAsync(cancellationToken);
 
         return await MapPeriodAsync(period, cancellationToken);
@@ -401,13 +395,16 @@ public class PayrollService : IPayrollService
         var now = DateTime.UtcNow;
         var userId = _currentUser.RequireUserId();
 
-        // Approval normally issued every payslip already; any gap is filled so finalized payroll is complete.
-        foreach (var payslip in PayslipIssuer.IssueMissing(period, userId, now))
+        period.Status = PayrollPeriodStatus.Finalized;
+
+        // Day 20: payslips are issued here, in the same transaction as the finalization, and only here (or by
+        // "Generate payslips" for older finalized payroll): they exist exactly when the payroll is final.
+        var payslips = PayslipIssuer.IssueMissing(period, userId, now);
+        foreach (var payslip in payslips)
         {
             await _payrollRepository.AddPayslipAsync(payslip, cancellationToken);
         }
 
-        period.Status = PayrollPeriodStatus.Finalized;
         period.IsLocked = true;
         period.FinalizedAt = now;
         period.FinalizedByUserId = userId;
@@ -417,6 +414,7 @@ public class PayrollService : IPayrollService
         // Validation, finalization, lock and audit are saved together (one transaction).
         _auditLogger.Add(AuditActions.PayrollFinalized, nameof(PayrollPeriod), period.Id, $"Approved → Finalized: {period.Records.Count} records."); // no salary amounts in the audit log
         _auditLogger.Add(AuditActions.PayrollLocked, nameof(PayrollPeriod), period.Id, "Approved → Finalized; payroll values locked.");
+        _auditLogger.Add(AuditActions.PayslipsGenerated, nameof(PayrollPeriod), period.Id, $"{payslips.Count} payslips issued at finalization.");
         await _payrollRepository.SaveChangesAsync(cancellationToken);
 
         return await MapPeriodAsync(period, cancellationToken);
@@ -464,7 +462,7 @@ public class PayrollService : IPayrollService
     // ---- helpers ----
 
     /// <summary>
-    /// HR/Admin see every record. An employee sees their own record once the payroll is Approved or Paid; anything
+    /// HR/Admin see every record. An employee sees their own record once the payroll is Finalized or Paid; anything
     /// else is reported as not found, so record ids of other employees reveal nothing.
     /// </summary>
     private async Task<PayrollRecord> GetVisibleRecordAsync(Guid id, CancellationToken cancellationToken)
@@ -682,7 +680,7 @@ public class PayrollService : IPayrollService
             CanFinalize = admin && status == PayrollPeriodStatus.Approved,
             CanCreatePaymentBatch = admin && status == PayrollPeriodStatus.Finalized && payslips.Paid < payslips.Issued,
             CanCancel = hr && status is PayrollPeriodStatus.Draft or PayrollPeriodStatus.Calculated or PayrollPeriodStatus.PendingApproval,
-            CanGeneratePayslips = hr && status is PayrollPeriodStatus.Approved or PayrollPeriodStatus.Finalized or PayrollPeriodStatus.Paid && payslips.Issued < totals.EmployeeCount,
+            CanGeneratePayslips = hr && status is PayrollPeriodStatus.Finalized or PayrollPeriodStatus.Paid && payslips.Issued < totals.EmployeeCount,
         };
     }
 

@@ -473,7 +473,7 @@ public class PayrollServiceTests
     // ---- employee access ----
 
     [Fact]
-    public async Task Employee_SeesOwnRecordOnlyAfterApproval()
+    public async Task Employee_SeesOwnRecordOnlyAfterFinalization()
     {
         var s = new Setup();
         var id = await s.CalculatedOctoberAsync();
@@ -488,6 +488,13 @@ public class PayrollServiceTests
         s.User.SignInAs(UserRole.Admin);
         await s.Service.ApproveAsync(id, CancellationToken.None);
 
+        s.User.SignInAs(UserRole.Employee, s.Alice.Id);
+        // Approved is not final for employees (Day 20): still hidden.
+        await Assert.ThrowsAsync<NotFoundException>(() => s.Service.GetRecordAsync(aliceRecord.Id, CancellationToken.None));
+        Assert.Empty(await s.Service.GetEmployeeHistoryAsync(s.Alice.Id, CancellationToken.None));
+
+        s.User.SignInAs(UserRole.Admin);
+        await s.Service.FinalizeAsync(id, CancellationToken.None);
         s.User.SignInAs(UserRole.Employee, s.Alice.Id);
         var record = await s.Service.GetRecordAsync(aliceRecord.Id, CancellationToken.None);
         Assert.Equal(32000m, record.NetSalary);
@@ -525,7 +532,8 @@ public class PayrollServiceTests
     public async Task Payslip_ShowsCorrectAmounts_AndIsAudited()
     {
         var s = new Setup();
-        await s.ApprovedOctoberAsync();
+        var id = await s.ApprovedOctoberAsync();
+        await s.Service.FinalizeAsync(id, CancellationToken.None);
         s.User.SignInAs(UserRole.Employee, s.Alice.Id);
 
         var payslip = await s.Payslips.GetByRecordAsync(s.RecordOf(s.Alice).Id, CancellationToken.None);
@@ -540,7 +548,7 @@ public class PayrollServiceTests
         Assert.Equal(payslip.GrossSalary, payslip.Earnings.Sum(l => l.Amount));
         Assert.Equal(payslip.TotalDeduction, payslip.Deductions.Sum(l => l.Amount));
         Assert.Contains(payslip.Earnings, l => l.Label == "House rent" && l.Amount == 10500m);
-        Assert.Equal("Approved", payslip.PayrollStatus);
+        Assert.Equal("Finalized", payslip.PayrollStatus);
         Assert.Equal("Unpaid", payslip.PaymentStatus);
         Assert.NotNull(payslip.PayslipNumber);
         Assert.True(payslip.IsFinal);

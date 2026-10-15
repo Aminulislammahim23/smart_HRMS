@@ -1,4 +1,5 @@
 using smartHRMS.Application.Common.Exceptions;
+using smartHRMS.Application.Common.Export;
 using smartHRMS.Application.Common.Models;
 using smartHRMS.Application.Common.Security;
 using smartHRMS.Application.Common.Text;
@@ -31,11 +32,20 @@ public interface IPaymentService
 
     Task<PaymentDto> MarkPaidAsync(Guid id, MarkPaymentPaidDto dto, CancellationToken cancellationToken);
 
-    Task<PaymentDto> MarkFailedAsync(Guid id, PaymentReasonDto dto, CancellationToken cancellationToken);
+    Task<PaymentDto> MarkFailedAsync(Guid id, MarkPaymentFailedDto dto, CancellationToken cancellationToken);
 
-    Task<PaymentDto> RetryAsync(Guid id, PaymentReasonDto dto, CancellationToken cancellationToken);
+    Task<PaymentDto> RetryAsync(Guid id, RetryPaymentDto dto, CancellationToken cancellationToken);
 
     Task<PaymentDto> CancelAsync(Guid id, PaymentReasonDto dto, CancellationToken cancellationToken);
+
+    /// <summary>Day 21: corrects the reference and/or date of a Paid payment (Admin, reason required, history kept).</summary>
+    Task<PaymentDto> CorrectAsync(Guid id, CorrectPaymentDto dto, CancellationToken cancellationToken);
+
+    /// <summary>Day 21: disbursement dashboard of eligible (Finalized or Paid) payroll (HR/Admin).</summary>
+    Task<DisbursementSummaryDto> GetSummaryAsync(DisbursementSummaryQueryDto query, CancellationToken cancellationToken);
+
+    /// <summary>Day 21: the payment list as CSV or XLSX with the list filters (HR/Admin), audited.</summary>
+    Task<ExportFile> ExportAsync(PaymentQueryDto query, string? format, CancellationToken cancellationToken);
 }
 
 /// <summary>
@@ -49,11 +59,16 @@ public interface IPaymentService
 /// - a paid payment is copied onto the payslip; when every payable payslip is paid, the payroll becomes Paid;
 /// - viewing: HR and Admin; changing: Admin only, and never one's own salary payment;
 /// - employees see only their own payments (the employee comes from the token).
+/// Day 21 (disbursement tracking) adds: payment evidence before Paid (<see cref="PaymentRules.EnsureEvidence"/>), an
+/// amount check against the locked record, failed-attempt references kept in history, retry with another method, an
+/// audited correction of a Paid payment's reference/date (never its amount or status), the disbursement dashboard and
+/// the payment export.
 /// </summary>
 public class PaymentService : IPaymentService
 {
     private const int DefaultPageSize = 25;
     private const int MaxPageSize = 100;
+    private const int MaxExportRows = 10_000;
 
     private readonly IPaymentRepository _paymentRepository;
     private readonly IPayrollRepository _payrollRepository;
@@ -255,12 +270,13 @@ public class PaymentService : IPaymentService
     public async Task<PagedResult<PaymentDto>> GetPaymentsAsync(PaymentQueryDto query, CancellationToken cancellationToken)
     {
         _currentUser.EnsureHrOrAdmin();
-        return await SearchAsync(query, query.EmployeeId, cancellationToken);
+        return await SearchAsync(query, query.EmployeeId, query.DepartmentId, cancellationToken);
     }
 
     public Task<PagedResult<PaymentDto>> GetMyPaymentsAsync(PaymentQueryDto query, CancellationToken cancellationToken)
     {
-        return SearchAsync(query, _currentUser.RequireEmployeeId(), cancellationToken);
+        // The employee comes from the token; a sent employeeId or departmentId can't widen the list.
+        return SearchAsync(query, _currentUser.RequireEmployeeId(), null, cancellationToken);
     }
 
     public async Task<PaymentDto> GetPaymentAsync(Guid id, CancellationToken cancellationToken)
@@ -280,26 +296,36 @@ public class PaymentService : IPaymentService
         var transaction = await GetChangeableAsync(id, cancellationToken);
         PaymentRules.EnsureCanMove(transaction.Status, PaymentTransactionStatus.Paid);
 
-        var record = transaction.PaymentBatchItem!.PayrollRecord!;
+        // Day 21: no payment is confirmed without evidence.
+        var reference = InputText.Optional(dto.TransactionReference);
+        var remarks = InputText.Optional(dto.Remarks);
+        PaymentRules.EnsureEvidence(transaction.PaymentMethod, reference, remarks);
+
+        var item = transaction.PaymentBatchItem!;
+        var record = item.PayrollRecord!;
         var period = await _payrollRepository.GetPeriodAsync(record.PayrollPeriodId, includeRecords: true, cancellationToken)
             ?? throw new NotFoundException("The payroll of this payment was not found.");
+        PaymentRules.EnsureAmountMatchesPayroll(transaction, item, record, period);
+        var payslip = record.Payslip ?? throw new ConflictException("This payroll record has no payslip.");
+        if (payslip.PaymentStatus == PaymentStatus.Paid)
+        {
+            throw new ConflictException("This salary has already been paid.");
+        }
+
         var paymentDate = PayslipIssuer.PaymentDate(dto.PaymentDate, period, _clock.Today);
-        var reference = InputText.Optional(dto.TransactionReference);
         var now = DateTime.UtcNow;
         var userId = _currentUser.RequireUserId();
 
-        Move(transaction, PaymentTransactionStatus.Paid, reference is null ? "Payment confirmed." : $"Payment confirmed, reference {reference}.");
+        Move(transaction, PaymentTransactionStatus.Paid, remarks is null ? "Payment confirmed." : $"Payment confirmed: {remarks}", reference);
         transaction.TransactionReference = reference;
         transaction.FailureReason = null;
         transaction.ProcessedAt = now;
         transaction.PaymentDate = paymentDate;
-        var item = transaction.PaymentBatchItem!;
         item.PaymentReference = reference;
         item.FailureReason = null;
         item.PaidAt = now;
 
-        // The employee-facing outcome lives on the payslip.
-        var payslip = record.Payslip ?? throw new ConflictException("This payroll record has no payslip.");
+        // The employee-facing outcome lives on the payslip. The payroll record's amounts are never touched here.
         PayslipIssuer.MarkPaid(payslip, paymentDate, transaction.PaymentMethod, reference, userId, now);
         var periodPaid = PayslipIssuer.CompletePeriodIfAllPaid(period, userId, now);
 
@@ -315,23 +341,26 @@ public class PaymentService : IPaymentService
         return await MapPaymentAsync(transaction, includeHistory: true, cancellationToken);
     }
 
-    public async Task<PaymentDto> MarkFailedAsync(Guid id, PaymentReasonDto dto, CancellationToken cancellationToken)
+    public async Task<PaymentDto> MarkFailedAsync(Guid id, MarkPaymentFailedDto dto, CancellationToken cancellationToken)
     {
         var reason = RequireReason(dto, "marking a payment failed");
+        var attemptReference = InputText.Optional(dto.TransactionReference);
         var transaction = await GetChangeableAsync(id, cancellationToken);
         PaymentRules.EnsureCanMove(transaction.Status, PaymentTransactionStatus.Failed);
 
-        Move(transaction, PaymentTransactionStatus.Failed, reason);
+        // The failure reason and the attempt's reference stay in the history row even after a retry clears the current reason.
+        Move(transaction, PaymentTransactionStatus.Failed, reason, attemptReference);
         transaction.FailureReason = reason;
         transaction.PaymentBatchItem!.FailureReason = reason;
 
         RefreshBatch(transaction.PaymentBatch!);
-        _auditLogger.Add(AuditActions.PaymentMarkedFailed, nameof(PaymentTransaction), transaction.Id, $"{transaction.PaymentBatchItem.PayrollRecord!.EmployeeCode}: Processing → Failed: {reason}");
+        _auditLogger.Add(AuditActions.PaymentMarkedFailed, nameof(PaymentTransaction), transaction.Id,
+            $"{transaction.PaymentBatchItem.PayrollRecord!.EmployeeCode}: Processing → Failed{(attemptReference is null ? string.Empty : $" (ref {attemptReference})")}: {reason}");
         await _paymentRepository.SaveChangesAsync(cancellationToken);
         return await MapPaymentAsync(transaction, includeHistory: true, cancellationToken);
     }
 
-    public async Task<PaymentDto> RetryAsync(Guid id, PaymentReasonDto dto, CancellationToken cancellationToken)
+    public async Task<PaymentDto> RetryAsync(Guid id, RetryPaymentDto dto, CancellationToken cancellationToken)
     {
         var transaction = await GetChangeableAsync(id, cancellationToken);
         PaymentRules.EnsureCanMove(transaction.Status, PaymentTransactionStatus.Processing);
@@ -340,12 +369,20 @@ public class PaymentService : IPaymentService
             throw new ConflictException("Only a failed payment can be retried.");
         }
 
-        Move(transaction, PaymentTransactionStatus.Processing, InputText.Optional(dto.Reason) ?? "Retry after failure.");
+        // A retry may use another method (e.g. cash after a bank transfer bounced); the change is part of the history.
+        var previousMethod = transaction.PaymentMethod;
+        var method = dto.PaymentMethod ?? previousMethod;
+        var methodChange = method == previousMethod ? string.Empty : $" Method {previousMethod} → {method}.";
+        var reason = (InputText.Optional(dto.Reason) ?? "Retry after failure.") + methodChange;
+
+        Move(transaction, PaymentTransactionStatus.Processing, reason.Length > 500 ? reason[..500] : reason);
+        transaction.PaymentMethod = method;
         transaction.FailureReason = null;
         transaction.PaymentBatchItem!.FailureReason = null;
 
         RefreshBatch(transaction.PaymentBatch!);
-        _auditLogger.Add(AuditActions.PaymentRetried, nameof(PaymentTransaction), transaction.Id, $"{transaction.PaymentBatchItem.PayrollRecord!.EmployeeCode}: Failed → Processing.");
+        _auditLogger.Add(AuditActions.PaymentRetried, nameof(PaymentTransaction), transaction.Id,
+            $"{transaction.PaymentBatchItem.PayrollRecord!.EmployeeCode}: Failed → Processing.{methodChange}");
         await _paymentRepository.SaveChangesAsync(cancellationToken);
         return await MapPaymentAsync(transaction, includeHistory: true, cancellationToken);
     }
@@ -363,6 +400,200 @@ public class PaymentService : IPaymentService
         await _paymentRepository.SaveChangesAsync(cancellationToken);
         return await MapPaymentAsync(transaction, includeHistory: true, cancellationToken);
     }
+
+    public async Task<PaymentDto> CorrectAsync(Guid id, CorrectPaymentDto dto, CancellationToken cancellationToken)
+    {
+        var reason = InputText.Optional(dto.Reason) ?? throw new BadRequestException("A reason is required when correcting a payment.");
+        var transaction = await GetChangeableAsync(id, cancellationToken);
+        if (transaction.Status != PaymentTransactionStatus.Paid)
+        {
+            throw new ConflictException("Only a paid payment can be corrected.");
+        }
+
+        var item = transaction.PaymentBatchItem!;
+        var record = item.PayrollRecord!;
+        var period = await _payrollRepository.GetPeriodAsync(record.PayrollPeriodId, includeRecords: true, cancellationToken)
+            ?? throw new NotFoundException("The payroll of this payment was not found.");
+        var payslip = record.Payslip ?? throw new ConflictException("This payroll record has no payslip.");
+
+        // A blank field means "unchanged": a correction can replace evidence but never remove it.
+        var oldReference = transaction.TransactionReference;
+        var oldDate = transaction.PaymentDate;
+        var newReference = InputText.Optional(dto.TransactionReference) ?? oldReference;
+        var newDate = dto.PaymentDate is null ? oldDate : PayslipIssuer.PaymentDate(dto.PaymentDate, period, _clock.Today);
+        if (newReference == oldReference && newDate == oldDate)
+        {
+            throw new BadRequestException("Nothing to correct: enter a different transaction reference or payment date.");
+        }
+
+        var changes = new List<string>();
+        if (newReference != oldReference)
+        {
+            changes.Add($"reference was '{oldReference ?? "none"}'");
+        }
+
+        if (newDate != oldDate)
+        {
+            changes.Add($"date was {oldDate:yyyy-MM-dd}");
+        }
+
+        // Paid → Paid is not a status transition: the correction is its own history row, and the old values stay in it.
+        var now = DateTime.UtcNow;
+        var history = new PaymentStatusHistory
+        {
+            PaymentTransactionId = transaction.Id,
+            PreviousStatus = PaymentTransactionStatus.Paid,
+            NewStatus = PaymentTransactionStatus.Paid,
+            Reason = $"Correction ({string.Join("; ", changes)}): {reason}",
+            Reference = newReference,
+            ChangedByUserId = _currentUser.RequireUserId(),
+        };
+        _paymentRepository.AddHistory(history);
+        transaction.History.Add(history);
+
+        transaction.TransactionReference = newReference;
+        transaction.PaymentDate = newDate;
+        transaction.UpdatedAt = now;
+        item.PaymentReference = newReference;
+        item.UpdatedAt = now;
+        payslip.PaymentReference = newReference;
+        payslip.PaymentDate = newDate;
+        payslip.UpdatedAt = now;
+
+        var newValues = new List<string>();
+        if (newReference != oldReference)
+        {
+            newValues.Add($"reference '{oldReference ?? "none"}' → '{newReference}'");
+        }
+
+        if (newDate != oldDate)
+        {
+            newValues.Add($"date {oldDate:yyyy-MM-dd} → {newDate:yyyy-MM-dd}");
+        }
+
+        _auditLogger.Add(AuditActions.PaymentCorrected, nameof(PaymentTransaction), transaction.Id,
+            $"{record.EmployeeCode}: Paid (correction) {string.Join(", ", newValues)}: {reason}");
+        await _paymentRepository.SaveChangesAsync(cancellationToken);
+        return await MapPaymentAsync(transaction, includeHistory: true, cancellationToken);
+    }
+
+    // ---- Day 21: disbursement dashboard and export ----
+
+    public async Task<DisbursementSummaryDto> GetSummaryAsync(DisbursementSummaryQueryDto query, CancellationToken cancellationToken)
+    {
+        _currentUser.EnsureHrOrAdmin();
+        var (page, pageSize) = Paging(query.Page, query.PageSize);
+        if (query.Year is < 2000 or > 2100)
+        {
+            throw new BadRequestException("The year must be between 2000 and 2100.");
+        }
+
+        // Only finalized (locked) payroll can be paid; Draft, Calculated, PendingApproval, Approved and Cancelled never appear.
+        var periods = (await _payrollRepository.SearchPeriodsAsync(query.Year, null, cancellationToken))
+            .Where(p => (p.Status == PayrollPeriodStatus.Finalized && p.IsLocked) || p.Status == PayrollPeriodStatus.Paid)
+            .Where(p => query.PayrollPeriodId is null || p.Id == query.PayrollPeriodId)
+            .OrderByDescending(p => p.StartDate)
+            .ToList();
+        var ids = periods.Select(p => p.Id).ToList();
+
+        var payable = await _payrollRepository.GetPayableTotalsAsync(ids, cancellationToken);
+        var active = (await _paymentRepository.GetActivePaymentTotalsAsync(ids, cancellationToken)).ToLookup(t => t.PayrollPeriodId);
+        var open = await _paymentRepository.GetPeriodIdsWithOpenBatchAsync(ids, cancellationToken);
+        var admin = _currentUser.IsAdmin();
+
+        var rows = periods.Select(period =>
+        {
+            var row = new PayrollDisbursementDto
+            {
+                PayrollPeriodId = period.Id,
+                PeriodName = period.Name,
+                StartDate = period.StartDate,
+                EndDate = period.EndDate,
+                PayrollStatus = period.Status.ToString(),
+                HasOpenBatch = open.Contains(period.Id),
+            };
+            Fill(row, payable.GetValueOrDefault(period.Id), active[period.Id]);
+            row.CanCreateBatch = admin && period.Status == PayrollPeriodStatus.Finalized && !row.HasOpenBatch && row.NotInitiatedCount > 0;
+            return row;
+        }).ToList();
+
+        return new DisbursementSummaryDto
+        {
+            Totals = Total(rows),
+            Payrolls = new PagedResult<PayrollDisbursementDto>
+            {
+                Items = rows.Skip((page - 1) * pageSize).Take(pageSize).ToList(),
+                Page = page,
+                PageSize = pageSize,
+                TotalCount = rows.Count,
+            },
+        };
+    }
+
+    public async Task<ExportFile> ExportAsync(PaymentQueryDto query, string? format, CancellationToken cancellationToken)
+    {
+        _currentUser.EnsureHrOrAdmin();
+        var exportFormat = TableExporter.ParseFormat(format);
+        var filter = BuildFilter(query, query.EmployeeId, query.DepartmentId);
+        var (items, total) = await _paymentRepository.SearchTransactionsAsync(filter, 1, MaxExportRows, cancellationToken);
+        if (total > MaxExportRows)
+        {
+            throw new BadRequestException($"The export would contain {total} payments; narrow the filters to at most {MaxExportRows}.");
+        }
+
+        var table = new ExportTable("Payments",
+            new("Employee ID"), new("Employee"), new("Department"), new("Payroll period"), new("Payslip"), new("Batch"),
+            new("Net payable", ExportKind.Amount), new("Method"), new("Status"), new("Transaction reference"),
+            new("Payment date", ExportKind.Date), new("Confirmed at", ExportKind.DateTime), new("Failure reason"));
+        foreach (var t in items)
+        {
+            var record = t.PaymentBatchItem?.PayrollRecord;
+            table.Add(record?.EmployeeCode, record?.EmployeeName, record?.DepartmentName, record?.PayrollPeriod?.Name, record?.Payslip?.PayslipNumber,
+                t.PaymentBatch?.BatchNumber, t.Amount, t.PaymentMethod.ToString(), t.Status.ToString(), t.TransactionReference,
+                t.PaymentDate ?? t.PaymentBatch?.PaymentDate, t.ProcessedAt, t.FailureReason);
+        }
+
+        await _auditLogger.WriteAsync(AuditActions.PaymentsExported, nameof(PaymentTransaction), null,
+            $"{table.Rows.Count} payments exported as {exportFormat.ToString().ToLowerInvariant()}.", _currentUser.UserId, _currentUser.Username, cancellationToken);
+
+        return TableExporter.Write(table, exportFormat, $"payments-{DateTime.UtcNow:yyyyMMdd-HHmm}");
+    }
+
+    /// <summary>See <see cref="DisbursementFiguresDto"/> for the definitions.</summary>
+    private static void Fill(DisbursementFiguresDto figures, PayableTotals? payable, IEnumerable<ActivePaymentTotal> active)
+    {
+        var byStatus = active.ToDictionary(a => a.Status);
+        (int Count, decimal Amount) Of(PaymentTransactionStatus status) =>
+            byStatus.TryGetValue(status, out var t) ? (t.Count, t.Amount) : (0, 0m);
+
+        figures.PayableCount = payable?.PayableCount ?? 0;
+        figures.PayableAmount = payable?.PayableAmount ?? 0m;
+        figures.PaidCount = payable?.PaidCount ?? 0;
+        figures.PaidAmount = payable?.PaidAmount ?? 0m;
+        figures.OutstandingAmount = figures.PayableAmount - figures.PaidAmount;
+        (figures.PendingCount, figures.PendingAmount) = Of(PaymentTransactionStatus.Pending);
+        (figures.ProcessingCount, figures.ProcessingAmount) = Of(PaymentTransactionStatus.Processing);
+        (figures.FailedCount, figures.FailedAmount) = Of(PaymentTransactionStatus.Failed);
+        figures.NotInitiatedCount = figures.PayableCount - figures.PaidCount - figures.PendingCount - figures.ProcessingCount - figures.FailedCount;
+        figures.NotInitiatedAmount = figures.OutstandingAmount - figures.PendingAmount - figures.ProcessingAmount - figures.FailedAmount;
+    }
+
+    private static DisbursementFiguresDto Total(IReadOnlyCollection<PayrollDisbursementDto> rows) => new()
+    {
+        PayableCount = rows.Sum(r => r.PayableCount),
+        PayableAmount = rows.Sum(r => r.PayableAmount),
+        PaidCount = rows.Sum(r => r.PaidCount),
+        PaidAmount = rows.Sum(r => r.PaidAmount),
+        OutstandingAmount = rows.Sum(r => r.OutstandingAmount),
+        NotInitiatedCount = rows.Sum(r => r.NotInitiatedCount),
+        NotInitiatedAmount = rows.Sum(r => r.NotInitiatedAmount),
+        PendingCount = rows.Sum(r => r.PendingCount),
+        PendingAmount = rows.Sum(r => r.PendingAmount),
+        ProcessingCount = rows.Sum(r => r.ProcessingCount),
+        ProcessingAmount = rows.Sum(r => r.ProcessingAmount),
+        FailedCount = rows.Sum(r => r.FailedCount),
+        FailedAmount = rows.Sum(r => r.FailedAmount),
+    };
 
     // ---- helpers ----
 
@@ -388,7 +619,7 @@ public class PaymentService : IPaymentService
     }
 
     /// <summary>Validated status change of a transaction and its item, with a history row.</summary>
-    private void Move(PaymentTransaction transaction, PaymentTransactionStatus to, string? reason)
+    private void Move(PaymentTransaction transaction, PaymentTransactionStatus to, string? reason, string? reference = null)
     {
         PaymentRules.EnsureCanMove(transaction.Status, to);
         var now = DateTime.UtcNow;
@@ -398,6 +629,7 @@ public class PaymentService : IPaymentService
             PreviousStatus = transaction.Status,
             NewStatus = to,
             Reason = reason,
+            Reference = reference,
             ChangedByUserId = _currentUser.RequireUserId(),
         };
         // Registered explicitly: a new row with a preset id found only through the navigation would be saved as an UPDATE.
@@ -427,15 +659,14 @@ public class PaymentService : IPaymentService
         return InputText.Optional(dto.Reason) ?? throw new BadRequestException($"A reason is required when {action}.");
     }
 
-    private async Task<PagedResult<PaymentDto>> SearchAsync(PaymentQueryDto query, Guid? employeeId, CancellationToken cancellationToken)
+    private static PaymentFilter BuildFilter(PaymentQueryDto query, Guid? employeeId, Guid? departmentId)
     {
-        var (page, pageSize) = Paging(query.Page, query.PageSize);
         if (query.From > query.To)
         {
             throw new BadRequestException("The 'from' date can't be after the 'to' date.");
         }
 
-        var filter = new PaymentFilter(
+        return new PaymentFilter(
             query.BatchId,
             employeeId,
             query.PayrollPeriodId,
@@ -443,7 +674,14 @@ public class PaymentService : IPaymentService
             ParseEnum<PaymentMethod>(query.PaymentMethod, "payment method"),
             query.From,
             query.To,
-            InputText.Optional(query.Search));
+            InputText.Optional(query.Search),
+            departmentId);
+    }
+
+    private async Task<PagedResult<PaymentDto>> SearchAsync(PaymentQueryDto query, Guid? employeeId, Guid? departmentId, CancellationToken cancellationToken)
+    {
+        var (page, pageSize) = Paging(query.Page, query.PageSize);
+        var filter = BuildFilter(query, employeeId, departmentId);
 
         var (items, total) = await _paymentRepository.SearchTransactionsAsync(filter, page, pageSize, cancellationToken);
         var result = new List<PaymentDto>(items.Count);
@@ -546,9 +784,11 @@ public class PaymentService : IPaymentService
             EmployeeId = transaction.EmployeeId,
             EmployeeCode = record?.EmployeeCode ?? string.Empty,
             EmployeeName = record?.EmployeeName ?? string.Empty,
+            DepartmentName = record?.DepartmentName,
             PayrollPeriodId = record?.PayrollPeriodId ?? Guid.Empty,
             PeriodName = record?.PayrollPeriod?.Name ?? string.Empty,
             PayslipId = record?.Payslip?.Id,
+            PayslipNumber = record?.Payslip?.PayslipNumber,
             Amount = transaction.Amount,
             PaymentMethod = transaction.PaymentMethod.ToString(),
             Status = transaction.Status.ToString(),
@@ -564,6 +804,7 @@ public class PaymentService : IPaymentService
                 CanMarkFailed = admin && PaymentRules.CanMove(transaction.Status, PaymentTransactionStatus.Failed),
                 CanRetry = admin && transaction.Status == PaymentTransactionStatus.Failed,
                 CanCancel = admin && PaymentRules.CanMove(transaction.Status, PaymentTransactionStatus.Cancelled),
+                CanCorrect = admin && transaction.Status == PaymentTransactionStatus.Paid,
             },
         };
 
@@ -571,11 +812,14 @@ public class PaymentService : IPaymentService
         {
             var history = transaction.History.OrderBy(h => h.CreatedAt).ToList();
             var names = await NamesAsync(history.Select(h => h.ChangedByUserId), cancellationToken);
+            dto.AttemptCount = history.Count(h => h.NewStatus == PaymentTransactionStatus.Processing);
+            dto.FailedAttemptCount = history.Count(h => h.NewStatus == PaymentTransactionStatus.Failed);
             dto.History = history.Select(h => new PaymentStatusHistoryDto
             {
                 PreviousStatus = h.PreviousStatus?.ToString(),
                 NewStatus = h.NewStatus.ToString(),
                 Reason = h.Reason,
+                Reference = h.Reference,
                 ChangedBy = h.ChangedByUserId is { } id && names.TryGetValue(id, out var name) ? name : null,
                 ChangedAt = h.CreatedAt,
             }).ToList();

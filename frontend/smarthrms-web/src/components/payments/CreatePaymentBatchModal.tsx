@@ -12,7 +12,20 @@ import { Modal } from '../common/Modal'
  * Admin: pays every unpaid payslip of a finalized payroll in one batch. Only the method, planned date and notes are
  * sent; the server picks the employees and calculates the amounts and totals.
  */
-export function CreatePaymentBatchModal({ period, onClose }: { period: PayrollPeriod; onClose: () => void }) {
+export function CreatePaymentBatchModal({
+  period,
+  unpaid,
+  amount,
+  amountLabel = 'net payroll',
+  onClose,
+}: {
+  period: Pick<PayrollPeriod, 'id' | 'name' | 'startDate'>
+  /** Employees still to pay, as reported by the server. */
+  unpaid: number
+  amount: number
+  amountLabel?: string
+  onClose: () => void
+}) {
   const { notify } = useToast()
   const navigate = useNavigate()
   const [method, setMethod] = useState<PaymentMethod>('BankTransfer')
@@ -20,7 +33,6 @@ export function CreatePaymentBatchModal({ period, onClose }: { period: PayrollPe
   const [notes, setNotes] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<unknown>(null)
-  const unpaid = period.payslipCount - period.paidPayslipCount
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault()
@@ -40,7 +52,7 @@ export function CreatePaymentBatchModal({ period, onClose }: { period: PayrollPe
     <Modal open title="Create payment batch" onClose={onClose} busy={busy}>
       <form onSubmit={submit} className="flex flex-col gap-3">
         <p className="text-sm text-base-content/80">
-          Pay the {unpaid} unpaid payslip{unpaid === 1 ? '' : 's'} of <span className="font-medium">{period.name}</span> (net payroll {formatAmount(period.netTotal)}).
+          Pay the {unpaid} unpaid payslip{unpaid === 1 ? '' : 's'} of <span className="font-medium">{period.name}</span> ({amountLabel} {formatAmount(amount)}).
           Employees with a zero net salary are not included. Amounts are taken from the finalized payroll.
         </p>
         <label className="fieldset py-0">

@@ -50,6 +50,7 @@ public class FakePaymentRepository : IPaymentRepository
             (filter.BatchId == null || t.PaymentBatchId == filter.BatchId)
             && (filter.EmployeeId == null || t.EmployeeId == filter.EmployeeId)
             && (filter.PayrollPeriodId == null || t.PaymentBatch!.PayrollPeriodId == filter.PayrollPeriodId)
+            && (filter.DepartmentId == null || t.PaymentBatchItem!.PayrollRecord!.Employee?.DepartmentId == filter.DepartmentId)
             && (filter.Status == null || t.Status == filter.Status)
             && (filter.Method == null || t.PaymentMethod == filter.Method)
             && (filter.From == null || (t.PaymentDate ?? t.PaymentBatch!.PaymentDate) >= filter.From)
@@ -60,6 +61,20 @@ public class FakePaymentRepository : IPaymentRepository
             .ToList();
         return Task.FromResult((query.Skip((page - 1) * pageSize).Take(pageSize).ToList(), query.Count));
     }
+
+    public Task<List<ActivePaymentTotal>> GetActivePaymentTotalsAsync(IReadOnlyCollection<Guid> payrollPeriodIds, CancellationToken cancellationToken) =>
+        Task.FromResult(Batches.Where(b => payrollPeriodIds.Contains(b.PayrollPeriodId))
+            .SelectMany(b => b.Items.Select(i => (b.PayrollPeriodId, Item: i)))
+            .Where(x => x.Item.Status != PaymentTransactionStatus.Cancelled)
+            .GroupBy(x => (x.PayrollPeriodId, x.Item.Status))
+            .Select(g => new ActivePaymentTotal(g.Key.PayrollPeriodId, g.Key.Status, g.Count(), g.Sum(x => x.Item.Amount)))
+            .ToList());
+
+    public Task<HashSet<Guid>> GetPeriodIdsWithOpenBatchAsync(IReadOnlyCollection<Guid> payrollPeriodIds, CancellationToken cancellationToken) =>
+        Task.FromResult(Batches
+            .Where(b => payrollPeriodIds.Contains(b.PayrollPeriodId) && b.Status is not (PaymentBatchStatus.Paid or PaymentBatchStatus.Cancelled))
+            .Select(b => b.PayrollPeriodId)
+            .ToHashSet());
 
     public Task AddBatchAsync(PaymentBatch batch, CancellationToken cancellationToken)
     {

@@ -127,7 +127,12 @@ export function usePayrollActions(onDone: (result?: PayrollCalculationResult) =>
   const batchFor = pending?.action === 'createBatch' ? pending.period : null
   const text = pending ? TEXT[pending.action] : null
   const dialogs = batchFor ? (
-    <CreatePaymentBatchModal period={batchFor} onClose={() => setPending(null)} />
+    <CreatePaymentBatchModal
+      period={batchFor}
+      unpaid={batchFor.payslipCount - batchFor.paidPayslipCount}
+      amount={batchFor.netTotal}
+      onClose={() => setPending(null)}
+    />
   ) : (
     <ConfirmDialog
       open={pending !== null}

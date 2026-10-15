@@ -4,6 +4,9 @@ using smartHRMS.Domain.Enums;
 
 namespace smartHRMS.Application.Interfaces;
 
+/// <summary>Finalized net salaries that are owed (payable) and the part already paid, for one payroll period.</summary>
+public sealed record PayableTotals(int PayableCount, decimal PayableAmount, int PaidCount, decimal PaidAmount);
+
 public interface IPayrollRepository
 {
     /// <summary>Tracked. With <paramref name="includeRecords"/>, the period's records and their payslips are loaded (tracked) too.</summary>
@@ -35,6 +38,12 @@ public interface IPayrollRepository
 
     /// <summary>Issued and paid payslips per period id (periods without payslips are absent).</summary>
     Task<Dictionary<Guid, PayslipCounts>> GetPayslipCountsAsync(IReadOnlyCollection<Guid> periodIds, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Payable records (net salary &gt; 0 with an issued payslip) per period id, and how many of them are paid, summed in
+    /// the database from the locked records (Day 21 disbursement dashboard). Periods without payable records are absent.
+    /// </summary>
+    Task<Dictionary<Guid, PayableTotals>> GetPayableTotalsAsync(IReadOnlyCollection<Guid> periodIds, CancellationToken cancellationToken);
 
     Task AddPayslipAsync(Payslip payslip, CancellationToken cancellationToken);
 

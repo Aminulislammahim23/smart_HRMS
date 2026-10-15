@@ -1,14 +1,21 @@
 import type { ApiResponse } from '../types/api'
 import type {
+  CorrectPaymentRequest,
   CreatePaymentBatchRequest,
+  DisbursementSummary,
+  DisbursementSummaryQuery,
+  MarkPaymentFailedRequest,
   MarkPaymentPaidRequest,
   Payment,
   PaymentBatch,
   PaymentBatchQuery,
   PaymentQuery,
+  RetryPaymentRequest,
 } from '../types/payment'
 import type { PagedResult } from '../types/payroll'
+import type { ExportFormat } from '../types/payrollReport'
 import { api, unwrap } from './api'
+import { downloadExport } from './exportService'
 
 function params(query: object) {
   return Object.fromEntries(Object.entries(query).filter(([, value]) => value !== undefined && value !== ''))
@@ -60,12 +67,29 @@ export function markPaymentPaid(id: string, data: MarkPaymentPaidRequest): Promi
   return unwrap(api.post<ApiResponse<Payment>>(`/payments/${id}/paid`, data))
 }
 
-export function markPaymentFailed(id: string, reason: string): Promise<Payment> {
-  return unwrap(api.post<ApiResponse<Payment>>(`/payments/${id}/failed`, { reason }))
+export function markPaymentFailed(id: string, data: MarkPaymentFailedRequest): Promise<Payment> {
+  return unwrap(api.post<ApiResponse<Payment>>(`/payments/${id}/failed`, data))
 }
 
-export function retryPayment(id: string, reason: string | null): Promise<Payment> {
-  return unwrap(api.post<ApiResponse<Payment>>(`/payments/${id}/retry`, { reason }))
+export function retryPayment(id: string, data: RetryPaymentRequest): Promise<Payment> {
+  return unwrap(api.post<ApiResponse<Payment>>(`/payments/${id}/retry`, data))
+}
+
+/** Day 21: corrects a Paid payment's reference or date; the old values stay in its history. */
+export function correctPayment(id: string, data: CorrectPaymentRequest): Promise<Payment> {
+  return unwrap(api.post<ApiResponse<Payment>>(`/payments/${id}/correct`, data))
+}
+
+// ---- Day 21: disbursement dashboard and export (HR/Admin) ----
+
+export function getDisbursementSummary(query: DisbursementSummaryQuery, signal?: AbortSignal): Promise<DisbursementSummary> {
+  return unwrap(api.get<ApiResponse<DisbursementSummary>>('/payments/summary', { params: params(query), signal }))
+}
+
+/** The payment list with the same filters, as CSV or Excel (paging is ignored: the whole result is exported). */
+export function exportPayments(query: PaymentQuery, format: ExportFormat): Promise<void> {
+  const filters = { ...query, page: undefined, pageSize: undefined }
+  return downloadExport('/payments/export', { ...params(filters), format }, 'payments', format)
 }
 
 export function cancelPayment(id: string, reason: string): Promise<Payment> {

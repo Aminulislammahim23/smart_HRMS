@@ -116,5 +116,11 @@ public class PaymentStatusHistory : BaseEntity
 
     public string? Reason { get; set; }
 
+    /// <summary>
+    /// The transfer reference of this attempt (Day 21): the reference confirmed when Paid, the provider reference of a
+    /// failed attempt, or the new reference of a correction. Kept here so a retry never loses an earlier reference.
+    /// </summary>
+    public string? Reference { get; set; }
+
     public Guid? ChangedByUserId { get; set; }
 }

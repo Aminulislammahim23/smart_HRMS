@@ -1,4 +1,4 @@
-import { Eye, Printer, ReceiptText, Wallet } from 'lucide-react'
+import { Banknote, Eye, MinusCircle, Printer, ReceiptText, Wallet } from 'lucide-react'
 import { useCallback, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { EmptyState } from '../../components/common/EmptyState'
@@ -12,10 +12,11 @@ import { PaymentTransactionStatusBadge } from '../../components/payments/Payment
 import { PaymentDetailsModal } from '../../components/payments/PaymentDetailsModal'
 import { PayrollRecordModal } from '../../components/payroll/PayrollRecordModal'
 import { PaymentStatusBadge } from '../../components/payroll/PayrollStatusBadge'
+import { PayslipPdfButton } from '../../components/payroll/PayslipPdfButton'
 import { PayslipView } from '../../components/payroll/PayslipView'
 import { useApi } from '../../hooks/useApi'
 import { getMyPayments } from '../../services/paymentService'
-import { exportMyPayslips, getMyCurrentPayslip, getMyPayslips } from '../../services/payrollService'
+import { exportMyPayslips, getMyCurrentPayslip, getMyPayrollSummary, getMyPayslips } from '../../services/payrollService'
 import { ApiError } from '../../types/api'
 import type { Payment } from '../../types/payment'
 import type { PayrollRecord } from '../../types/payroll'
@@ -36,7 +37,7 @@ function CurrentPayslip() {
   if (error instanceof ApiError && error.status === 404) {
     return (
       <div className="card bg-base-100 shadow-sm">
-        <EmptyState icon={ReceiptText} title="No payslips yet" description="Your payslip is issued when HR's payroll for the month has been approved." />
+        <EmptyState icon={ReceiptText} title="No payslips yet" description="Your payslip appears here once the payroll for the month has been finalized." />
       </div>
     )
   }
@@ -46,13 +47,142 @@ function CurrentPayslip() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex justify-end print:hidden">
+      <div className="flex justify-end gap-2 print:hidden">
+        {payslip.payslipId && <PayslipPdfButton payslipId={payslip.payslipId} payslipNumber={payslip.payslipNumber} label="Download current payslip as PDF" />}
         <Link to={`/payroll/payslips/${payslip.payslipId}?print=1`} className="btn btn-primary btn-sm">
           <Printer className="size-4" /> Print / save as PDF
         </Link>
       </div>
       <PayslipView payslip={payslip} />
     </div>
+  )
+}
+
+const PAYMENT_NOTE: Record<Payment['status'], string> = {
+  Pending: 'Your salary payment is scheduled.',
+  Processing: 'Your salary payment is being processed.',
+  Paid: 'Your salary has been paid.',
+  Failed: 'The last payment attempt did not go through; it will be retried.',
+  Cancelled: 'This payment was withdrawn; your salary will be paid in a later payment.',
+}
+
+/**
+ * Day 21: the status of the employee's most recent salary payment (read-only). The server takes the employee from
+ * the token; nothing here can change a payment. Renders nothing until a payment exists.
+ */
+function LatestPayment() {
+  const [viewing, setViewing] = useState(false)
+  const load = useCallback((signal: AbortSignal) => getMyPayments({ page: 1, pageSize: 1 }, signal), [])
+  const { data } = useApi(load)
+  const payment = data?.items[0]
+  if (!payment) return null
+
+  return (
+    <div className="card bg-base-100 shadow-sm">
+      <div className="card-body flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="text-sm text-base-content/60">Latest salary payment</p>
+          <p className="flex flex-wrap items-center gap-2 font-semibold">
+            {payment.periodName} · <span className="tabular-nums">{formatAmount(payment.amount)}</span>
+            <PaymentTransactionStatusBadge status={payment.status} />
+          </p>
+          <p className="text-xs text-base-content/60">
+            {PAYMENT_NOTE[payment.status]} {enumLabel(payment.paymentMethod)}
+            {payment.status === 'Paid' ? ` · paid ${formatDate(payment.paymentDate)}` : payment.paymentDate ? ` · planned ${formatDate(payment.paymentDate)}` : ''}
+            {payment.status === 'Paid' && payment.transactionReference ? ` · ref ${payment.transactionReference}` : ''}
+          </p>
+        </div>
+        <button type="button" className="btn btn-sm self-start sm:self-center" onClick={() => setViewing(true)}>
+          <Eye className="size-4" /> Details
+        </button>
+      </div>
+      {viewing && <PaymentDetailsModal paymentId={payment.id} onClose={() => setViewing(false)} />}
+    </div>
+  )
+}
+
+/**
+ * Payroll summary of the year (server totals of the employee's finalized payroll), the latest payslip and the latest
+ * salary payment. The year is chosen here; the employee always comes from the token.
+ */
+function MySummary() {
+  const currentYear = new Date().getFullYear()
+  const [year, setYear] = useState(currentYear)
+  const load = useCallback((signal: AbortSignal) => getMyPayrollSummary(year, signal), [year])
+  const { data, error, loading, reload } = useApi(load)
+
+  const cards = data
+    ? [
+        { label: 'Payslips', value: String(data.payslipCount), hint: `in ${data.year}`, icon: ReceiptText, tone: 'bg-primary/10 text-primary' },
+        { label: 'Gross salary', value: formatAmount(data.grossSalary), hint: `${data.year} total`, icon: Banknote, tone: 'bg-info/10 text-info' },
+        { label: 'Total deduction', value: formatAmount(data.totalDeduction), hint: `${data.year} total`, icon: MinusCircle, tone: 'bg-error/10 text-error' },
+        { label: 'Net salary', value: formatAmount(data.netSalary), hint: `Paid ${formatAmount(data.paidNetSalary)}`, icon: Wallet, tone: 'bg-success/10 text-success' },
+      ]
+    : []
+
+  return (
+    <section className="mb-6 flex flex-col gap-4 print:hidden" aria-label="Payroll summary">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="font-semibold">Payroll summary</h2>
+        <select className="select select-sm w-32" value={year} onChange={(e) => setYear(Number(e.target.value))} aria-label="Summary year">
+          {Array.from({ length: 5 }, (_, i) => currentYear - i).map((y) => (
+            <option key={y} value={y}>
+              {y}
+            </option>
+          ))}
+        </select>
+      </div>
+      {error ? (
+        <div className="card bg-base-100 shadow-sm"><ErrorState error={error} onRetry={reload} /></div>
+      ) : loading && !data ? (
+        <Loading label="Loading summary…" />
+      ) : data ? (
+        <>
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            {cards.map(({ label, value, hint, icon: Icon, tone }) => (
+              <div key={label} className="card bg-base-100 shadow-sm">
+                <div className="card-body flex-row items-center gap-4 p-5">
+                  <div className={`rounded-xl p-3 ${tone}`}>
+                    <Icon className="size-6" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm text-base-content/60">{label}</p>
+                    <p className="truncate text-xl font-semibold tabular-nums">{value}</p>
+                    <p className="truncate text-xs text-base-content/50">{hint}</p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+          {data.latest && (
+            <div className="card bg-base-100 shadow-sm">
+              <div className="card-body flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-sm text-base-content/60">Latest payslip</p>
+                  <p className="font-semibold">
+                    {data.latest.periodName} · <span className="tabular-nums">{formatAmount(data.latest.netSalary)}</span> net
+                  </p>
+                  <p className="text-xs text-base-content/60">
+                    {data.latest.payslipNumber} · <PaymentStatusBadge status={data.latest.paymentStatus} />
+                    {data.latest.paymentDate && ` · paid ${formatDate(data.latest.paymentDate)}`}
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Link to={`/payroll/payslips/${data.latest.payslipId}`} className="btn btn-sm">
+                    <Eye className="size-4" /> View
+                  </Link>
+                  <PayslipPdfButton payslipId={data.latest.payslipId} payslipNumber={data.latest.payslipNumber} label="Download latest payslip as PDF" />
+                  <Link to={`/payroll/payslips/${data.latest.payslipId}?print=1`} className="btn btn-sm">
+                    <Printer className="size-4" /> Print
+                  </Link>
+                </div>
+              </div>
+            </div>
+          )}
+          <LatestPayment />
+        </>
+      ) : null}
+    </section>
   )
 }
 
@@ -93,6 +223,7 @@ function MyPayslips() {
           <Link to={`/payroll/payslips/${r.payslipId}`} className="btn btn-ghost btn-xs btn-square" title="Payslip" aria-label={`Payslip of ${r.periodName}`}>
             <ReceiptText className="size-4" />
           </Link>
+          {r.payslipId && <PayslipPdfButton compact payslipId={r.payslipId} payslipNumber={r.payslipNumber} label={`Download payslip of ${r.periodName} as PDF`} />}
           <Link to={`/payroll/payslips/${r.payslipId}?print=1`} className="btn btn-ghost btn-xs btn-square" title="Print" aria-label={`Print payslip of ${r.periodName}`}>
             <Printer className="size-4" />
           </Link>
@@ -212,7 +343,8 @@ export default function MyPayrollPage() {
 
   return (
     <>
-      <PageHeader title="My payroll" description="Your payslips and salary payments." />
+      <PageHeader title="My payroll" description="Your payslips and salary payments. Only finalized payroll is shown." />
+      <MySummary />
       <div role="tablist" className="tabs tabs-box mb-6 w-max max-w-full overflow-x-auto bg-base-100 shadow-sm print:hidden">
         {TABS.map(({ id, label }) => (
           <button

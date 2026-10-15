@@ -102,6 +102,12 @@ public class PaymentRepository : IPaymentRepository
             query = query.Where(t => t.PaymentBatch!.PayrollPeriodId == filter.PayrollPeriodId);
         }
 
+        // The employee's current department, as the Day 17/19 payroll lists filter.
+        if (filter.DepartmentId is not null)
+        {
+            query = query.Where(t => t.PaymentBatchItem!.PayrollRecord!.Employee!.DepartmentId == filter.DepartmentId);
+        }
+
         if (filter.Status is not null)
         {
             query = query.Where(t => t.Status == filter.Status);
@@ -144,6 +150,30 @@ public class PaymentRepository : IPaymentRepository
             .ToListAsync(cancellationToken);
 
         return (items, total);
+    }
+
+    public async Task<List<ActivePaymentTotal>> GetActivePaymentTotalsAsync(IReadOnlyCollection<Guid> payrollPeriodIds, CancellationToken cancellationToken)
+    {
+        var ids = payrollPeriodIds.ToList();
+        var rows = await _dbContext.PaymentBatchItems
+            .AsNoTracking()
+            .Where(i => i.Status != PaymentTransactionStatus.Cancelled && ids.Contains(i.PaymentBatch!.PayrollPeriodId))
+            .GroupBy(i => new { i.PaymentBatch!.PayrollPeriodId, i.Status })
+            .Select(g => new { g.Key.PayrollPeriodId, g.Key.Status, Count = g.Count(), Amount = g.Sum(i => i.Amount) })
+            .ToListAsync(cancellationToken);
+
+        return rows.Select(r => new ActivePaymentTotal(r.PayrollPeriodId, r.Status, r.Count, r.Amount)).ToList();
+    }
+
+    public async Task<HashSet<Guid>> GetPeriodIdsWithOpenBatchAsync(IReadOnlyCollection<Guid> payrollPeriodIds, CancellationToken cancellationToken)
+    {
+        var ids = payrollPeriodIds.ToList();
+        var open = await _dbContext.PaymentBatches
+            .Where(b => ids.Contains(b.PayrollPeriodId) && b.Status != PaymentBatchStatus.Paid && b.Status != PaymentBatchStatus.Cancelled)
+            .Select(b => b.PayrollPeriodId)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+        return open.ToHashSet();
     }
 
     public async Task AddBatchAsync(PaymentBatch batch, CancellationToken cancellationToken)

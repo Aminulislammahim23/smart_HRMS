@@ -181,3 +181,42 @@ public class PayrollPeriodHistoryDto : PayrollAmountsDto
 
     public DateTime? CancelledAt { get; set; }
 }
+
+/// <summary>The signed-in employee's own payroll summary (Day 20): finalized and paid payroll only.</summary>
+public class MyPayrollSummaryDto
+{
+    public int Year { get; set; }
+
+    /// <summary>Payslips in the year.</summary>
+    public int PayslipCount { get; set; }
+
+    public decimal GrossSalary { get; set; }
+
+    public decimal TotalDeduction { get; set; }
+
+    public decimal NetSalary { get; set; }
+
+    public decimal PaidNetSalary { get; set; }
+
+    /// <summary>The newest payslip (any year), or null when none has been issued.</summary>
+    public MyLatestPayslipDto? Latest { get; set; }
+}
+
+public class MyLatestPayslipDto
+{
+    public Guid PayslipId { get; set; }
+
+    public string PayslipNumber { get; set; } = string.Empty;
+
+    public string PeriodName { get; set; } = string.Empty;
+
+    public decimal GrossSalary { get; set; }
+
+    public decimal TotalDeduction { get; set; }
+
+    public decimal NetSalary { get; set; }
+
+    public string PaymentStatus { get; set; } = string.Empty;
+
+    public DateOnly? PaymentDate { get; set; }
+}
